@@ -3,7 +3,7 @@ Main FastAPI Application Entry Point
 Milestone 1: Security Data Aggregation & Threat Intelligence Layer
 
 Initializes the FastAPI application, configures CORS middleware for frontend access,
-and registers core API routers (health, events, metrics).
+and registers core API routers (health, events, metrics, mitre).
 """
 
 from fastapi import FastAPI
@@ -11,6 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.app.api.events import router as events_router
 from backend.app.api.health import router as health_router
 from backend.app.api.metrics import router as metrics_router
+from backend.app.api.mitre import router as mitre_router
 
 app = FastAPI(
     title="Security Operations Dashboard API",
@@ -31,3 +32,4 @@ app.add_middleware(
 app.include_router(health_router)
 app.include_router(events_router)
 app.include_router(metrics_router)
+app.include_router(mitre_router)
