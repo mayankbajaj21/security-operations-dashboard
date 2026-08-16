@@ -1,0 +1,378 @@
+/* ==========================================================================
+   Enterprise Security Operations Center (SOC) Design System
+   Milestone 1: Security Data Aggregation & Threat Intelligence Layer
+   ========================================================================== */
+
+/* Dark Theme (Default) */
+:root, [data-theme="dark"] {
+  /* Surface & Background Colors */
+  --bg-primary: #090d16;
+  --bg-secondary: #0f172a;
+  --bg-card: #131c2e;
+  --bg-card-hover: #1a263d;
+  
+  /* Borders & Dividers */
+  --border-color: #1e293b;
+  --border-subtle: #334155;
+  
+  /* Typography Colors */
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  
+  /* Security Threat Severities */
+  --color-critical: #f43f5e;
+  --color-high: #fb923c;
+  --color-medium: #facc15;
+  --color-low: #38bdf8;
+  
+  /* Operational Status Indicators */
+  --color-success: #22c55e;
+  --color-warning: #f59e0b;
+  --color-danger: #ef4444;
+  --color-info: #6366f1;
+  
+  /* SOC Brand Accent */
+  --color-accent: #06b6d4;
+  
+  /* Typography Families */
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
+}
+
+/* Light Theme */
+[data-theme="light"] {
+  /* Surface & Background Colors */
+  --bg-primary: #f1f5f9;
+  --bg-secondary: #ffffff;
+  --bg-card: #ffffff;
+  --bg-card-hover: #f8fafc;
+  
+  /* Borders & Dividers */
+  --border-color: #cbd5e1;
+  --border-subtle: #e2e8f0;
+  
+  /* Typography Colors */
+  --text-primary: #0f172a;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  
+  /* Security Threat Severities */
+  --color-critical: #e11d48;
+  --color-high: #ea580c;
+  --color-medium: #ca8a04;
+  --color-low: #0284c7;
+  
+  /* Operational Status Indicators */
+  --color-success: #16a34a;
+  --color-warning: #d97706;
+  --color-danger: #dc2626;
+  --color-info: #4f46e5;
+  
+  /* SOC Brand Accent */
+  --color-accent: #0284c7;
+}
+
+/* ==========================================================================
+   Global Box Reset, Smooth Transitions & Typography
+   ========================================================================== */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body, header, aside, main, div, button, input, select, table, th, td {
+  transition: background-color 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ==========================================================================
+   Custom SOC Scrollbar
+   ========================================================================== */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-subtle);
+}
+
+/* ==========================================================================
+   Layout Foundations & Core Utility Classes
+   ========================================================================== */
+
+.container {
+  width: 100%;
+  max-width: 1440px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.panel {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 1.25rem;
+}
+
+.chart-panel {
+  min-width: 0;
+  width: 100%;
+}
+
+.chart-container {
+  width: 100%;
+  height: 280px;
+  min-height: 280px;
+  position: relative;
+}
+
+.card {
+  background-color: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 1.25rem;
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.card:hover {
+  background-color: var(--bg-card-hover);
+  border-color: var(--border-subtle);
+}
+
+.section-title {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  margin-bottom: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.muted {
+  color: var(--text-muted);
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  font-family: var(--font-mono);
+  letter-spacing: 0.02em;
+  line-height: 1;
+}
+
+/* ==========================================================================
+   Security Severity Styling Classes
+   ========================================================================== */
+
+.severity-critical {
+  color: var(--color-critical);
+  background-color: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.severity-high {
+  color: var(--color-high);
+  background-color: rgba(251, 146, 60, 0.12);
+  border: 1px solid rgba(251, 146, 60, 0.3);
+}
+
+.severity-medium {
+  color: var(--color-medium);
+  background-color: rgba(250, 204, 21, 0.12);
+  border: 1px solid rgba(250, 204, 21, 0.3);
+}
+
+.severity-low {
+  color: var(--color-low);
+  background-color: rgba(56, 189, 248, 0.12);
+  border: 1px solid rgba(56, 189, 248, 0.3);
+}
+
+/* ==========================================================================
+   Event Status Indicator Classes
+   ========================================================================== */
+
+.status-success {
+  color: var(--color-success);
+  background-color: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.status-failed {
+  color: var(--color-danger);
+  background-color: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+}
+
+.status-blocked {
+  color: var(--color-warning);
+  background-color: rgba(245, 158, 11, 0.12);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.status-detected {
+  color: var(--color-info);
+  background-color: rgba(99, 102, 241, 0.12);
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+/* ==========================================================================
+   SOC Table Styles & Controls
+   ========================================================================== */
+
+.soc-table-container {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-card);
+}
+
+.soc-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.825rem;
+}
+
+.soc-table th {
+  background-color: var(--bg-secondary);
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.soc-table td {
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.soc-table tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+.soc-table tbody tr:hover {
+  background-color: var(--bg-card-hover);
+}
+
+.soc-select {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.45rem 0.75rem;
+  font-size: 0.8rem;
+  outline: none;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.soc-select:focus {
+  border-color: var(--color-accent);
+}
+
+.soc-button {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all 0.15s ease;
+}
+
+.soc-button:hover:not(:disabled) {
+  background-color: var(--bg-card-hover);
+  border-color: var(--border-subtle);
+}
+
+.soc-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+.spin-icon {
+  animation: spin 1s linear infinite;
+}
+
+/* ==========================================================================
+   Responsive Breakpoint Foundations
+   ========================================================================== */
+
+@media (min-width: 1024px) {
+  .container {
+    padding: 2rem;
+  }
+}
+
+@media (max-width: 1023px) and (min-width: 768px) {
+  .container {
+    padding: 1.25rem;
+  }
+}
+
+@media (max-width: 767px) {
+  .container {
+    padding: 1rem;
+  }
+  
+  .panel, .card {
+    padding: 1rem;
+  }
+}

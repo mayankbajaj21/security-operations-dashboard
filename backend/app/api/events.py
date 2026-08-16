@@ -7,6 +7,7 @@ Provides GET /events endpoint for querying, filtering, and paginating canonical 
 
 from datetime import datetime
 import math
+import re
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Query, status
 from pymongo.errors import PyMongoError
@@ -35,10 +36,14 @@ def get_events(
     limit: int = Query(default=50, ge=1, le=100, description="Items per page (max 100)"),
     severity: Optional[str] = Query(default=None, description="Filter by event severity (Critical, High, Medium, Low)"),
     event_type: Optional[str] = Query(default=None, description="Filter by event type"),
-    status_filter: Optional[str] = Query(default=None, alias="status", description="Filter by event status (Success, Blocked, Failed, Detected)")
+    status_filter: Optional[str] = Query(default=None, alias="status", description="Filter by event status (Success, Blocked, Failed, Detected)"),
+    start_date: Optional[str] = Query(default=None, description="Filter by start date (YYYY-MM-DD or ISO string)"),
+    end_date: Optional[str] = Query(default=None, description="Filter by end date (YYYY-MM-DD or ISO string)"),
+    ip_address: Optional[str] = Query(default=None, description="Filter by source or destination IP address"),
+    search: Optional[str] = Query(default=None, description="Search term matching event_id, source_ip, destination_ip, username, or event_type")
 ) -> dict:
     """
-    Retrieves paginated security event documents with optional multi-field filtering.
+    Retrieves paginated security event documents with optional multi-field filtering & server-side search.
     
     Query Parameters:
     - page: Page number (default: 1)
@@ -46,6 +51,10 @@ def get_events(
     - severity: Maps to event_severity
     - event_type: Maps to event_type
     - status: Maps to event_status
+    - start_date: Maps to timestamp >= start_date (T00:00:00)
+    - end_date: Maps to timestamp <= end_date (T23:59:59)
+    - ip_address: Maps to source_ip OR destination_ip
+    - search: Case-insensitive search across event_id, source_ip, destination_ip, username, event_type
     
     Returns:
     - Paginated list of security events sorted by timestamp descending.
@@ -54,15 +63,59 @@ def get_events(
         db = get_database()
         collection = db["security_events"]
         
-        # Build query filter
-        query_filter = {}
+        # Build query conditions list
+        conditions = []
+
         if severity:
-            query_filter["event_severity"] = severity
+            conditions.append({"event_severity": severity})
         if event_type:
-            query_filter["event_type"] = event_type
+            conditions.append({"event_type": event_type})
         if status_filter:
-            query_filter["event_status"] = status_filter
+            conditions.append({"event_status": status_filter})
             
+        # Date range filtering on timestamp field
+        if start_date or end_date:
+            date_filter = {}
+            if start_date:
+                start_str = f"{start_date}T00:00:00" if "T" not in start_date else start_date
+                date_filter["$gte"] = start_str
+            if end_date:
+                end_str = f"{end_date}T23:59:59" if "T" not in end_date else end_date
+                date_filter["$lte"] = end_str
+            conditions.append({"timestamp": date_filter})
+
+        # IP address filtering (matches source_ip OR destination_ip)
+        if ip_address and ip_address.strip():
+            clean_ip = ip_address.strip()
+            conditions.append({
+                "$or": [
+                    {"source_ip": clean_ip},
+                    {"destination_ip": clean_ip}
+                ]
+            })
+
+        # Server-side search across 5 fields (event_id, source_ip, destination_ip, username, event_type)
+        if search and search.strip():
+            safe_search = re.escape(search.strip())
+            search_regex = {"$regex": safe_search, "$options": "i"}
+            conditions.append({
+                "$or": [
+                    {"event_id": search_regex},
+                    {"source_ip": search_regex},
+                    {"destination_ip": search_regex},
+                    {"username": search_regex},
+                    {"event_type": search_regex}
+                ]
+            })
+
+        # Combine all active filter conditions
+        if len(conditions) == 0:
+            query_filter = {}
+        elif len(conditions) == 1:
+            query_filter = conditions[0]
+        else:
+            query_filter = {"$and": conditions}
+
         # Total count for pagination metadata
         total = collection.count_documents(query_filter)
         total_pages = math.ceil(total / limit) if total > 0 else 0
