@@ -335,5 +335,24 @@ To ensure reproducibility, data lineage, and raw immutability, the project stric
 * MongoDB database architecture documentation.
 
 ### Deferred to Future Milestones:
-* **Milestone 2**: Machine learning, anomaly detection, statistical thresholding, and behavior modeling.
 * **Milestone 3**: Composite risk scoring, automated threat prioritization, risk matrix analytics, and alert response correlation.
+
+---
+
+## 9. Milestone 2 Collection: `threat_predictions`
+
+Added in **Milestone 2 — Step 7** to store machine learning anomaly predictions, threat classifications, confidence scores, and XAI reason arrays.
+
+| Field | Type | Required | Description | Index |
+| :--- | :--- | :---: | :--- | :--- |
+| `_id` | ObjectId | Yes | MongoDB internal object ID | Unique Primary |
+| `event_id` | String | Yes | Unique event ID matching `security_events.event_id` | **Unique Index** |
+| `prediction` | String | Yes | Model output (`Normal` / `Suspicious`) | Standard Index |
+| `anomaly_score` | Double | Yes | Continuous Isolation Forest decision score | None |
+| `threat_type` | String | Yes | Categorical activity type (e.g. `Brute Force`, `Malware`) | Standard Index |
+| `threat_level` | String | Yes | Calibrated SOC threat level | Compound Index |
+| `confidence_score` | Integer | Yes | Bounded 0–100 threat confidence score | Standard Index |
+| `reasons` | Array[String] | Yes | XAI explanation string list | None |
+| `model_version` | String | Yes | ML model version identifier (`isolation_forest_v1`) | None |
+| `created_at` | Datetime | Yes | Prediction persistence timestamp (UTC) | Standard Index |
+
