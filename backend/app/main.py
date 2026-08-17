@@ -13,6 +13,7 @@ from backend.app.api.events import router as events_router
 from backend.app.api.health import router as health_router
 from backend.app.api.metrics import router as metrics_router
 from backend.app.api.mitre import router as mitre_router
+from backend.app.api.predictions import router as predictions_router
 from backend.app.api.threat_intel import router as threat_intel_router
 from backend.app.api.trends import router as trends_router
 
@@ -39,3 +40,5 @@ app.include_router(mitre_router)
 app.include_router(assets_router)
 app.include_router(threat_intel_router)
 app.include_router(trends_router)
+app.include_router(predictions_router)
+

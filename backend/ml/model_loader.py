@@ -54,6 +54,14 @@ def load_preprocessor(filepath: Union[str, Path] = DEFAULT_PREPROCESSOR_PATH) ->
             "Please run 'python backend/ml/preprocessing.py' to generate the artifact."
         )
 
+    # Ensure __main__ has class attribute for joblib pickle compatibility
+    main_mod = sys.modules.get('__main__')
+    if main_mod:
+        if not hasattr(main_mod, 'SecurityEventPreprocessor'):
+            setattr(main_mod, 'SecurityEventPreprocessor', SecurityEventPreprocessor)
+        if not hasattr(main_mod, 'IsolationForestDetector'):
+            setattr(main_mod, 'IsolationForestDetector', IsolationForestDetector)
+
     try:
         preprocessor = SecurityEventPreprocessor.load(target_path)
     except Exception as e:
