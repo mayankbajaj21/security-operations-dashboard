@@ -110,6 +110,19 @@ const IncidentResponsePage = ({ allEvents = null }) => {
 
   return (
     <div style={styles.container}>
+      {/* 1. STANDARDIZED PAGE HEADER */}
+      <div style={styles.headerRow}>
+        <div>
+          <h2 className="section-title" style={styles.pageHeading}>
+            <AlertOctagon size={20} color="var(--color-accent)" />
+            <span>Incident Response</span>
+          </h2>
+          <p className="muted" style={styles.pageSubtitle}>
+            Real-time threat telemetry and security risk analytics monitoring
+          </p>
+        </div>
+      </div>
+
       {loading && (
         <div className="panel" style={styles.statePanel}>
           <p className="muted">Scanning telemetry for incident response records...</p>
@@ -246,7 +259,35 @@ const styles = {
   container: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '1.25rem'
+    gap: '1.25rem',
+    width: '100%',
+    boxSizing: 'border-box'
+  },
+  headerRow: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: '0.75rem',
+    marginBottom: '0.25rem'
+  },
+  pageHeading: {
+    fontSize: '1.25rem',
+    fontWeight: '700',
+    margin: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    color: 'var(--text-primary)',
+    fontFamily: 'var(--font-sans)',
+    letterSpacing: '-0.01em'
+  },
+  pageSubtitle: {
+    fontSize: '0.8rem',
+    marginTop: '0.25rem',
+    marginBottom: 0,
+    color: 'var(--text-muted)',
+    fontFamily: 'var(--font-sans)'
   },
   contentSection: {
     display: 'flex',

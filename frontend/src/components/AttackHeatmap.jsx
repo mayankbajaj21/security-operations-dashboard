@@ -1,30 +1,42 @@
 import React, { useState, useMemo } from 'react';
-import { Grid, Flame, Filter, Info } from 'lucide-react';
+import { Grid, Flame, Info } from 'lucide-react';
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const HOURS = Array.from({ length: 24 }, (_, i) => String(i).padStart(2, '0'));
 
 const RELEVANT_TYPES = [
   'brute force',
+  'malware',
   'malware infection',
   'failed login',
   'privilege escalation',
   'port scan',
+  'phishing',
   'phishing attempt',
-  'unauthorized access attempt',
+  'sql injection',
+  'unauthorized access',
+  'unauthorized file access',
   'data exfiltration',
   'ransomware execution',
   'ddos attack'
 ];
 
+const FILTERS = [
+  { id: 'all', label: 'All Events' },
+  { id: 'suspicious', label: 'Suspicious' },
+  { id: 'low', label: 'Low Threat' },
+  { id: 'medium', label: 'Medium Threat' },
+  { id: 'high', label: 'High Threat' },
+  { id: 'critical', label: 'Critical Threat' }
+];
+
 /**
  * Presentational Attack Activity Heatmap Component (7 Days x 24 Hours)
- * Consumes global `allEvents` array passed from App.jsx parent.
- * Performs zero backend API calls.
+ * Occupies 100% full available content width.
+ * Features 6 exact filters: All Events, Suspicious, Low Threat, Medium Threat, High Threat, Critical Threat.
  */
-const AttackHeatmap = ({ allEvents = null }) => {
-  const [filterMode, setFilterMode] = useState('all'); // 'all' or 'relevant'
-  const [severityFilter, setSeverityFilter] = useState('');
+const AttackHeatmap = ({ allEvents = null, onSelectTimeSlot }) => {
+  const [filterOption, setFilterOption] = useState('all');
   const [hoveredCell, setHoveredCell] = useState(null);
 
   // Compute 7x24 matrix and peak statistics using useMemo
@@ -58,20 +70,26 @@ const AttackHeatmap = ({ allEvents = null }) => {
       const dateObj = new Date(evt.timestamp);
       if (isNaN(dateObj.getTime())) return;
 
-      const severityStr = evt.event_severity?.toLowerCase() || '';
-      const typeStr = evt.event_type?.toLowerCase() || '';
+      const severityStr = (evt.event_severity || evt.severity || '').toLowerCase();
+      const typeStr = (evt.event_type || evt.threat_type || '').toLowerCase();
+      const isSuspicious = 
+        evt.prediction === 'Suspicious' || 
+        evt.threat_intel_match === true || 
+        severityStr === 'critical' || 
+        severityStr === 'high' || 
+        RELEVANT_TYPES.some(t => typeStr.includes(t));
 
-      // Security Threats Only mode check
-      if (filterMode === 'relevant') {
-        const isCriticalOrHigh = severityStr === 'critical' || severityStr === 'high';
-        const isRelevantType = RELEVANT_TYPES.some((t) => typeStr.includes(t));
-        const isMalware = Boolean(evt.malware_detected);
-        if (!isCriticalOrHigh && !isRelevantType && !isMalware) return;
-      }
-
-      // Severity Filter check
-      if (severityFilter && severityFilter.trim() !== '') {
-        if (severityStr !== severityFilter.toLowerCase()) return;
+      // Filter handling in exact order
+      if (filterOption === 'suspicious') {
+        if (!isSuspicious) return;
+      } else if (filterOption === 'low') {
+        if (severityStr !== 'low') return;
+      } else if (filterOption === 'medium') {
+        if (severityStr !== 'medium') return;
+      } else if (filterOption === 'high') {
+        if (severityStr !== 'high') return;
+      } else if (filterOption === 'critical') {
+        if (severityStr !== 'critical') return;
       }
 
       // Convert JS getDay() (0=Sun, 1=Mon..6=Sat) to Mon=0..Sun=6 index
@@ -102,14 +120,15 @@ const AttackHeatmap = ({ allEvents = null }) => {
       peakCell: peak,
       totalMatchingEvents: matchCount
     };
-  }, [allEvents, filterMode, severityFilter]);
+  }, [allEvents, filterOption]);
 
   // Compute dynamic cell background & text color relative to maxCount
   const getCellStyles = (count) => {
     if (count === 0 || maxCount === 0) {
       return {
-        backgroundColor: 'rgba(255, 255, 255, 0.02)',
-        color: 'var(--text-muted)'
+        backgroundColor: 'var(--bg-card)',
+        color: 'var(--text-muted)',
+        border: '1px solid var(--border-subtle)'
       };
     }
 
@@ -117,18 +136,18 @@ const AttackHeatmap = ({ allEvents = null }) => {
 
     if (ratio > 0.75) {
       return {
-        backgroundColor: 'rgba(244, 63, 94, 0.85)',
+        backgroundColor: 'rgba(244, 63, 94, 0.9)',
         color: '#ffffff',
-        boxShadow: '0 0 6px rgba(244, 63, 94, 0.4)'
+        boxShadow: '0 0 8px rgba(244, 63, 94, 0.45)'
       };
     } else if (ratio > 0.45) {
       return {
-        backgroundColor: 'rgba(245, 158, 11, 0.75)',
+        backgroundColor: 'rgba(245, 158, 11, 0.85)',
         color: '#ffffff'
       };
     } else if (ratio > 0.2) {
       return {
-        backgroundColor: 'rgba(6, 182, 212, 0.65)',
+        backgroundColor: 'rgba(6, 182, 212, 0.75)',
         color: '#ffffff'
       };
     } else {
@@ -139,10 +158,27 @@ const AttackHeatmap = ({ allEvents = null }) => {
     }
   };
 
+  const getFilterActiveColor = (filterId) => {
+    switch (filterId) {
+      case 'critical':
+        return 'var(--color-critical)';
+      case 'high':
+        return 'var(--color-high)';
+      case 'medium':
+        return 'var(--color-warning)';
+      case 'low':
+        return 'var(--color-low)';
+      case 'suspicious':
+        return 'var(--color-critical)';
+      default:
+        return 'var(--color-accent)';
+    }
+  };
+
   if (allEvents === null) {
     return (
       <div className="panel" style={styles.statePanel}>
-        <p className="muted">Loading SOC attack activity heatmap...</p>
+        <p className="muted">Loading attack activity heatmap...</p>
       </div>
     );
   }
@@ -156,54 +192,34 @@ const AttackHeatmap = ({ allEvents = null }) => {
           <div>
             <h3 style={styles.title}>Attack Activity Heatmap</h3>
             <p className="muted" style={styles.subtitle}>
-              Temporal distribution of security events by day and hour
+              Temporal distribution of security events by day of week and hour of day
             </p>
           </div>
         </div>
 
-        {/* Local Toolbar Controls */}
+        {/* 6 Exact Heatmap Filter Controls */}
         <div style={styles.toolbar}>
-          {/* Mode Toggle Button */}
           <div style={styles.toggleGroup}>
-            <button
-              className="soc-button"
-              onClick={() => setFilterMode('all')}
-              style={{
-                ...styles.toggleBtn,
-                backgroundColor: filterMode === 'all' ? 'var(--color-accent)' : 'transparent',
-                color: filterMode === 'all' ? '#000000' : 'var(--text-secondary)'
-              }}
-            >
-              All Events
-            </button>
-            <button
-              className="soc-button"
-              onClick={() => setFilterMode('relevant')}
-              style={{
-                ...styles.toggleBtn,
-                backgroundColor: filterMode === 'relevant' ? 'var(--color-critical)' : 'transparent',
-                color: filterMode === 'relevant' ? '#ffffff' : 'var(--text-secondary)'
-              }}
-            >
-              Security Threats Only
-            </button>
-          </div>
-
-          {/* Severity Filter */}
-          <div style={styles.filterWrapper}>
-            <Filter size={13} color="var(--text-muted)" />
-            <select
-              className="soc-select"
-              value={severityFilter}
-              onChange={(e) => setSeverityFilter(e.target.value)}
-              style={styles.selectInput}
-            >
-              <option value="">All Severities</option>
-              <option value="Critical">Critical</option>
-              <option value="High">High</option>
-              <option value="Medium">Medium</option>
-              <option value="Low">Low</option>
-            </select>
+            {FILTERS.map((f) => {
+              const isActive = filterOption === f.id;
+              const activeColor = getFilterActiveColor(f.id);
+              return (
+                <button
+                  key={f.id}
+                  className="soc-button"
+                  onClick={() => setFilterOption(f.id)}
+                  style={{
+                    ...styles.toggleBtn,
+                    backgroundColor: isActive ? activeColor : 'transparent',
+                    color: isActive ? '#ffffff' : 'var(--text-secondary)',
+                    fontWeight: isActive ? '700' : '600',
+                    boxShadow: isActive ? `0 2px 6px ${activeColor}44` : 'none'
+                  }}
+                >
+                  {f.label}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -214,22 +230,22 @@ const AttackHeatmap = ({ allEvents = null }) => {
           <Flame size={15} color={maxCount > 0 ? 'var(--color-warning)' : 'var(--text-muted)'} />
           {peakCell ? (
             <span style={styles.insightText}>
-              Peak Attack Window:{' '}
+              Peak Activity Window:{' '}
               <strong style={{ color: 'var(--color-accent)' }}>
                 {peakCell.day}, {peakCell.hour}:00–{String(Number(peakCell.hour) + 1).padStart(2, '0')}:00
               </strong>{' '}
               with <strong style={{ color: 'var(--color-warning)' }}>{peakCell.count} events</strong>.
             </span>
           ) : (
-            <span style={styles.insightText}>No attack activity recorded for current criteria.</span>
+            <span style={styles.insightText}>No event activity recorded for the selected filter.</span>
           )}
         </div>
         <span style={styles.totalBadge}>
-          {totalMatchingEvents.toLocaleString()} total events analyzed
+          {totalMatchingEvents.toLocaleString()} events analyzed
         </span>
       </div>
 
-      {/* Heatmap Grid Container with Horizontal Scroll */}
+      {/* Heatmap Grid Container with Full Width & Horizontal Scroll if needed */}
       <div style={styles.gridScrollContainer}>
         <div style={styles.heatmapTable}>
           {/* X-Axis Hours Header */}
@@ -264,6 +280,9 @@ const AttackHeatmap = ({ allEvents = null }) => {
                     }}
                     onMouseEnter={() => setHoveredCell({ day, hour, ...cellData })}
                     onMouseLeave={() => setHoveredCell(null)}
+                    onClick={() => {
+                      if (onSelectTimeSlot) onSelectTimeSlot(day, hour);
+                    }}
                   >
                     <span style={styles.cellCount}>{count}</span>
                   </div>
@@ -294,20 +313,21 @@ const AttackHeatmap = ({ allEvents = null }) => {
           </div>
         ) : (
           <div style={styles.tooltipPlaceholder}>
-            <span style={styles.mutedText}>Hover over any cell to view detailed hourly event breakdown</span>
+            <span style={styles.mutedText}>Hover over any cell to view hourly security event breakdown</span>
           </div>
         )}
 
         {/* Heat Intensity Legend */}
         <div style={styles.legendGroup}>
-          <span style={styles.legendLabel}>Intensity:</span>
+          <span style={styles.legendLabel}>Less Activity</span>
           <div style={styles.legendScale}>
-            <div style={{ ...styles.legendBox, backgroundColor: 'rgba(255, 255, 255, 0.03)' }}>0</div>
+            <div style={{ ...styles.legendBox, backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', color: 'var(--text-muted)' }}>0</div>
             <div style={{ ...styles.legendBox, backgroundColor: 'rgba(6, 182, 212, 0.25)', color: 'var(--text-primary)' }}>Low</div>
-            <div style={{ ...styles.legendBox, backgroundColor: 'rgba(6, 182, 212, 0.65)', color: '#fff' }}>Med</div>
-            <div style={{ ...styles.legendBox, backgroundColor: 'rgba(245, 158, 11, 0.75)', color: '#fff' }}>High</div>
-            <div style={{ ...styles.legendBox, backgroundColor: 'rgba(244, 63, 94, 0.85)', color: '#fff' }}>Peak</div>
+            <div style={{ ...styles.legendBox, backgroundColor: 'rgba(6, 182, 212, 0.75)', color: '#fff' }}>Med</div>
+            <div style={{ ...styles.legendBox, backgroundColor: 'rgba(245, 158, 11, 0.85)', color: '#fff' }}>High</div>
+            <div style={{ ...styles.legendBox, backgroundColor: 'rgba(244, 63, 94, 0.9)', color: '#fff' }}>Peak</div>
           </div>
+          <span style={styles.legendLabel}>More Activity</span>
         </div>
       </div>
     </div>
@@ -319,13 +339,16 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '1rem',
-    padding: '1.25rem'
+    padding: '1.25rem',
+    width: '100%',
+    boxSizing: 'border-box'
   },
   statePanel: {
     minHeight: '140px',
     display: 'flex',
     justifyContent: 'center',
-    alignItems: 'center'
+    alignItems: 'center',
+    width: '100%'
   },
   header: {
     display: 'flex',
@@ -352,36 +375,31 @@ const styles = {
   toolbar: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.75rem'
+    gap: '0.75rem',
+    flexWrap: 'wrap'
   },
   toggleGroup: {
     display: 'flex',
     backgroundColor: 'var(--bg-secondary)',
     border: '1px solid var(--border-color)',
     borderRadius: '6px',
-    padding: '2px'
+    padding: '2px',
+    gap: '2px',
+    flexWrap: 'wrap'
   },
   toggleBtn: {
     fontSize: '0.72rem',
-    padding: '0.2rem 0.5rem',
+    padding: '0.25rem 0.55rem',
     border: 'none',
     borderRadius: '4px',
-    fontWeight: '600'
-  },
-  filterWrapper: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.35rem'
-  },
-  selectInput: {
-    height: '28px',
-    fontSize: '0.75rem'
+    cursor: 'pointer',
+    transition: 'all 0.15s ease'
   },
   insightBanner: {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backgroundColor: 'var(--bg-secondary)',
     border: '1px solid var(--border-color)',
     borderRadius: '6px',
     padding: '0.5rem 0.85rem',
@@ -411,7 +429,8 @@ const styles = {
     display: 'flex',
     flexDirection: 'column',
     gap: '4px',
-    minWidth: '700px'
+    minWidth: '720px',
+    width: '100%'
   },
   headerRow: {
     display: 'flex',

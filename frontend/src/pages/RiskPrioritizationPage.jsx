@@ -304,14 +304,15 @@ const RiskPrioritizationPage = ({ allEvents = null }) => {
 
   return (
     <div style={styles.container}>
-      {/* 1. COMPACT PAGE HEADER */}
+      {/* 1. STANDARDIZED PAGE HEADER */}
       <div style={styles.headerRow}>
         <div>
-          <h2 className="section-title" style={{ fontSize: '1.2rem', margin: 0 }}>
-            Security Risk & Alert Prioritization
+          <h2 className="section-title" style={styles.pageHeading}>
+            <Flame size={20} color="var(--color-accent)" />
+            <span>Risk Prioritization</span>
           </h2>
-          <p className="muted" style={{ fontSize: '0.78rem', margin: '0.2rem 0 0 0' }}>
-            Alerts ranked via transparent enrichment-based scoring rules
+          <p className="muted" style={styles.pageSubtitle}>
+            Real-time threat telemetry and security risk analytics monitoring
           </p>
         </div>
         <button
@@ -799,7 +800,27 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: '0.15rem'
+    flexWrap: 'wrap',
+    gap: '0.75rem',
+    marginBottom: '0.25rem'
+  },
+  pageHeading: {
+    fontSize: '1.25rem',
+    fontWeight: '700',
+    margin: 0,
+    display: 'flex',
+    alignItems: 'center',
+    gap: '0.5rem',
+    color: 'var(--text-primary)',
+    fontFamily: 'var(--font-sans)',
+    letterSpacing: '-0.01em'
+  },
+  pageSubtitle: {
+    fontSize: '0.8rem',
+    marginTop: '0.25rem',
+    marginBottom: 0,
+    color: 'var(--text-muted)',
+    fontFamily: 'var(--font-sans)'
   },
   methodologyToggleBtn: {
     fontSize: '0.75rem',
@@ -1088,17 +1109,18 @@ const styles = {
     gap: '0.75rem'
   },
   tooltipContainer: {
-    backgroundColor: '#131c2e',
-    border: '1px solid #334155',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-subtle)',
     borderRadius: '4px',
     padding: '0.5rem 0.75rem',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+    boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
     fontSize: '0.75rem'
   },
   tooltipValue: {
-    color: '#f8fafc',
+    color: 'var(--text-primary)',
     marginTop: '0.2rem',
-    fontFamily: 'var(--font-mono)'
+    fontFamily: 'var(--font-mono)',
+    fontWeight: '600'
   }
 };
 

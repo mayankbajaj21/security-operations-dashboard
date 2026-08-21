@@ -144,7 +144,7 @@ const TopAffectedAssetsChart = ({ allEvents = null }) => {
     });
 
     return {
-      topAssets: assetList.slice(0, 5),
+      topAssets: assetList.slice(0, 10),
       summaryStats: {
         criticalCount: critCount,
         highCount: highCount,
@@ -167,7 +167,7 @@ const TopAffectedAssetsChart = ({ allEvents = null }) => {
           <ShieldAlert size={18} color="var(--color-accent)" />
           <div>
             <h3 className="section-title" style={{ fontSize: '0.95rem', margin: 0 }}>
-              Asset Risk & Exposure
+              Asset Risk &amp; Exposure
             </h3>
             <p className="muted" style={{ fontSize: '0.73rem', margin: '0.15rem 0 0 0' }}>
               Assets requiring analyst attention
@@ -182,17 +182,17 @@ const TopAffectedAssetsChart = ({ allEvents = null }) => {
           <div style={styles.pillItem}>
             <AlertCircle size={13} color="var(--color-critical)" />
             <span style={styles.pillLabel}>Critical Assets:</span>
-            <strong style={{ color: 'var(--color-critical)' }}>{summaryStats.criticalCount}</strong>
+            <strong style={{ color: 'var(--color-critical)', fontFamily: 'var(--font-mono)' }}>{summaryStats.criticalCount}</strong>
           </div>
           <div style={styles.pillItem}>
             <AlertTriangle size={13} color="var(--color-high)" />
             <span style={styles.pillLabel}>High-Risk Assets:</span>
-            <strong style={{ color: 'var(--color-high)' }}>{summaryStats.highCount}</strong>
+            <strong style={{ color: 'var(--color-high)', fontFamily: 'var(--font-mono)' }}>{summaryStats.highCount}</strong>
           </div>
           <div style={styles.pillItem}>
             <Shield size={13} color="var(--color-warning)" />
             <span style={styles.pillLabel}>Vulnerable Assets:</span>
-            <strong style={{ color: 'var(--color-warning)' }}>{summaryStats.vulnAssetCount}</strong>
+            <strong style={{ color: 'var(--color-warning)', fontFamily: 'var(--font-mono)' }}>{summaryStats.vulnAssetCount}</strong>
           </div>
         </div>
       )}
@@ -200,7 +200,7 @@ const TopAffectedAssetsChart = ({ allEvents = null }) => {
       {/* Loading / Empty / Top 5 Asset List */}
       {isLoading ? (
         <div style={styles.stateContainer}>
-          <p className="muted" style={{ fontSize: '0.8rem' }}>Loading asset risk & exposure analysis...</p>
+          <p className="muted" style={{ fontSize: '0.8rem' }}>Loading asset risk &amp; exposure analysis...</p>
         </div>
       ) : topAssets.length === 0 ? (
         <div style={styles.stateContainer}>
@@ -227,8 +227,8 @@ const TopAffectedAssetsChart = ({ allEvents = null }) => {
                   </div>
 
                   <div style={styles.rowRight}>
-                    {/* Score Bar & Numeric Display */}
-                    <div style={styles.scoreBox}>
+                    {/* Event-Derived Risk Score Bar & Numeric Display */}
+                    <div style={styles.scoreBox} title="Event-Derived Risk Score">
                       <div style={styles.scoreBarTrack}>
                         <div
                           style={{
@@ -243,6 +243,9 @@ const TopAffectedAssetsChart = ({ allEvents = null }) => {
                       </span>
                     </div>
 
+                    <span className="badge status-detected" style={{ fontSize: '0.72rem', fontFamily: 'var(--font-mono)' }}>
+                      {asset.totalEvents} Events
+                    </span>
                     <Badge type="severity" value={asset.risk_level} />
                   </div>
                 </div>
@@ -361,7 +364,7 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '1rem',
-    backgroundColor: 'rgba(15, 23, 42, 0.5)',
+    backgroundColor: 'var(--bg-secondary)',
     border: '1px solid var(--border-color)',
     borderRadius: '6px',
     padding: '0.4rem 0.75rem',
@@ -383,7 +386,7 @@ const styles = {
     gap: '0.5rem'
   },
   assetCard: {
-    backgroundColor: 'var(--bg-primary)',
+    backgroundColor: 'var(--bg-card)',
     border: '1px solid var(--border-color)',
     borderRadius: '6px',
     padding: '0.55rem 0.75rem',
@@ -428,7 +431,8 @@ const styles = {
   scoreBarTrack: {
     width: '60px',
     height: '6px',
-    backgroundColor: 'var(--bg-secondary)',
+    backgroundColor: 'var(--bg-primary)',
+    border: '1px solid var(--border-subtle)',
     borderRadius: '3px',
     overflow: 'hidden'
   },
@@ -450,8 +454,8 @@ const styles = {
     justifyContent: 'space-between',
     flexWrap: 'wrap',
     gap: '0.5rem',
-    paddingTop: '0.2rem',
-    borderTop: '1px solid rgba(255, 255, 255, 0.03)'
+    paddingTop: '0.35rem',
+    borderTop: '1px solid var(--border-color)'
   },
   factorBadges: {
     display: 'flex',
@@ -464,11 +468,12 @@ const styles = {
     padding: '0.1rem 0.35rem'
   },
   recText: {
-    fontSize: '0.73rem'
+    fontSize: '0.73rem',
+    color: 'var(--text-secondary)'
   },
   detailDrawer: {
     marginTop: '0.3rem',
-    backgroundColor: 'rgba(15, 23, 42, 0.7)',
+    backgroundColor: 'var(--bg-secondary)',
     border: '1px solid var(--border-color)',
     borderRadius: '4px',
     padding: '0.5rem 0.75rem'

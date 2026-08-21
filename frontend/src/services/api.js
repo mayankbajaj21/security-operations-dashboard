@@ -103,4 +103,64 @@ export const getThreatIntel = async (options = {}) => {
   return fetchWithCache('/threat-intel', {}, options);
 };
 
+/* ==========================================================================
+ * Milestone 2: Prediction APIs
+ * ========================================================================== */
+
+/**
+ * POST /predict - Triggers real-time ML inference & security threat classification
+ */
+export const predictEvent = async (payload) => {
+  const response = await apiClient.post('/predict', payload);
+  return response.data;
+};
+
+/**
+ * GET /predictions - Retrieves paginated stored threat predictions from MongoDB
+ */
+export const getPredictions = async (params = {}, options = {}) => {
+  if (options.noCache) {
+    const response = await apiClient.get('/predictions', { params });
+    return response.data;
+  }
+  return fetchWithCache('/predictions', params, options);
+};
+
+/**
+ * GET /predictions/{event_id} - Retrieves a single threat prediction by event ID
+ */
+export const getPredictionByEventId = async (eventId, options = {}) => {
+  if (options.noCache) {
+    const response = await apiClient.get(`/predictions/${eventId}`);
+    return response.data;
+  }
+  return fetchWithCache(`/predictions/${eventId}`, {}, options);
+};
+
+/**
+ * GET /anomalies - Retrieves detected suspicious anomaly predictions
+ */
+export const getAnomalies = async (params = {}, options = {}) => {
+  if (options.noCache) {
+    const response = await apiClient.get('/anomalies', { params });
+    return response.data;
+  }
+  return fetchWithCache('/anomalies', params, options);
+};
+
+/**
+ * GET /model-performance - Retrieves Isolation Forest evaluation metrics & diagnostics
+ */
+export const getModelPerformance = async (options = {}) => {
+  return fetchWithCache('/model-performance', {}, options);
+};
+
+/**
+ * GET /threat-summary - Retrieves aggregate threat statistics across all predictions
+ */
+export const getThreatSummary = async (options = {}) => {
+  return fetchWithCache('/threat-summary', {}, options);
+};
+
 export default apiClient;
+

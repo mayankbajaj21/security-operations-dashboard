@@ -1,211 +1,146 @@
-import React from 'react';
-import { 
-  LayoutDashboard, 
-  ShieldAlert, 
-  Radar, 
-  Server,
-  Target,
-  AlertOctagon,
-  Flame,
-  Shield,
+import React, { useState } from 'react';
+import {
+  LayoutDashboard,
+  Activity,
+  Radar,
+  Search,
+  ShieldAlert,
+  BarChart2,
+  ChevronLeft,
+  ChevronRight,
+  User,
   X
 } from 'lucide-react';
 
-const Sidebar = ({ isOpen, onClose, activeTab, onSelectTab }) => {
-  const sections = [
-    {
-      title: null,
-      items: [
-        { id: 'overview', label: 'Overview', icon: LayoutDashboard }
-      ]
-    },
-    {
-      title: 'MONITORING',
-      items: [
-        { id: 'events', label: 'Security Events', icon: ShieldAlert },
-        { id: 'threat-intel', label: 'Threat Intelligence', icon: Radar },
-        { id: 'assets', label: 'Vulnerabilities', icon: Server }
-      ]
-    },
-    {
-      title: 'ANALYTICS',
-      items: [
-        { id: 'risk', label: 'Risk Prioritization', icon: Flame },
-        { id: 'incidents', label: 'Incident Response', icon: AlertOctagon },
-        { id: 'mitre', label: 'MITRE ATT&CK', icon: Target }
-      ]
-    }
+/**
+ * Clean SOC Navigation Sidebar Component
+ * - Top Header: "NAVIGATION" text on the left + Compact Collapse Arrow (< / >) on the right
+ * - Navigation: Overview, Security Events, Threat Intel, Event Investigation, Vulnerabilities, Analytics
+ * - Bottom: Admin Profile Item
+ */
+const Sidebar = ({
+  isOpen,
+  onClose,
+  isCollapsed,
+  onToggleCollapse,
+  activeTab,
+  onSelectTab
+}) => {
+  const [hoveredTab, setHoveredTab] = useState(null);
+
+  const navItems = [
+    { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+    { id: 'events', label: 'Security Events', icon: Activity },
+    { id: 'threat-intel', label: 'Threat Intelligence', icon: Radar },
+    { id: 'investigation', label: 'Event Investigation', icon: Search },
+    { id: 'vulnerabilities', label: 'Vulnerabilities', icon: ShieldAlert },
+    { id: 'analytics', label: 'Analytics', icon: BarChart2 }
   ];
 
   return (
-    <aside 
-      style={{
-        ...styles.sidebar,
-        transform: isOpen ? 'translateX(0)' : 'translateX(-100%)'
-      }}
-    >
-      {/* Sidebar Header with Brand & Close Button */}
-      <div style={styles.sidebarHeader}>
-        <div style={styles.brandTitle}>
-          <Shield size={18} color="var(--color-accent)" />
-          <span style={styles.brandText}>SOC Navigation</span>
-        </div>
-        <button 
-          onClick={onClose} 
-          style={styles.closeBtn} 
-          title="Close Sidebar" 
-          aria-label="Close Sidebar"
+    <aside className={`soc-sidebar-root ${isCollapsed ? 'collapsed' : 'expanded'} ${isOpen ? 'mobile-open' : ''}`}>
+      {/* 1. TOP SIDEBAR HEADER: "NAVIGATION" + COLLAPSE ARROW */}
+      <div className="soc-sidebar-toggle-row">
+        {!isCollapsed && (
+          <span className="soc-sidebar-header-title">NAVIGATION</span>
+        )}
+
+        <button
+          onClick={onToggleCollapse}
+          className="soc-sidebar-toggle-btn"
+          title={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={isCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
         >
-          <X size={16} color="var(--text-muted)" />
+          {isCollapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+        </button>
+
+        {/* Mobile Close Button (visible only on small screens) */}
+        <button
+          onClick={onClose}
+          className="soc-sidebar-mobile-close"
+          title="Close Navigation"
+          aria-label="Close Navigation"
+        >
+          <X size={18} />
         </button>
       </div>
 
-      <nav style={styles.nav}>
-        {sections.map((section, idx) => (
-          <div key={section.title || `section-${idx}`} style={styles.sectionGroup}>
-            {section.title && (
-              <div style={styles.sectionHeader}>
-                <span style={styles.sectionTitle}>{section.title}</span>
-              </div>
-            )}
+      {/* 2. NAVIGATION LINKS */}
+      <nav className="soc-sidebar-nav">
+        <div className="soc-nav-group">
+          <div className="soc-nav-items-list">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const isActive = activeTab === item.id;
 
-            <div style={styles.itemList}>
-              {section.items.map((item) => {
-                const Icon = item.icon;
-                const isActive = activeTab === item.id;
-
-                return (
+              return (
+                <div
+                  key={item.id}
+                  className="soc-nav-item-wrapper"
+                  onMouseEnter={() => setHoveredTab(item.id)}
+                  onMouseLeave={() => setHoveredTab(null)}
+                >
                   <button
-                    key={item.id}
                     onClick={() => {
                       onSelectTab(item.id);
+                      if (onClose) onClose();
                     }}
-                    style={{
-                      ...styles.navButton,
-                      ...(isActive ? styles.activeNavButton : {})
-                    }}
+                    className={`soc-nav-btn ${isActive ? 'active' : ''}`}
+                    aria-label={item.label}
                   >
-                    <Icon 
-                      size={16} 
-                      color={isActive ? 'var(--color-accent)' : 'var(--text-muted)'} 
-                    />
-                    <span style={{
-                      ...styles.navLabel,
-                      ...(isActive ? styles.activeNavLabel : {})
-                    }}>
-                      {item.label}
+                    <span className="soc-nav-icon-box">
+                      <Icon size={20} />
                     </span>
+
+                    {!isCollapsed && <span className="soc-nav-label">{item.label}</span>}
+                    {isActive && <span className="soc-active-indicator" />}
                   </button>
-                );
-              })}
-            </div>
+
+                  {/* Collapsed Mode Tooltip */}
+                  {isCollapsed && hoveredTab === item.id && (
+                    <div className="soc-sidebar-tooltip" role="tooltip">
+                      {item.label}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
-        ))}
+        </div>
       </nav>
+
+      {/* 3. BOTTOM UTILITY FOOTER — ADMIN ITEM */}
+      <div className="soc-sidebar-footer">
+        <div
+          className="soc-nav-item-wrapper"
+          onMouseEnter={() => setHoveredTab('admin')}
+          onMouseLeave={() => setHoveredTab(null)}
+        >
+          <button
+            onClick={() => {
+              onSelectTab('admin');
+              if (onClose) onClose();
+            }}
+            className={`soc-nav-btn ${activeTab === 'admin' ? 'active' : ''}`}
+            aria-label="Admin"
+          >
+            <span className="soc-nav-icon-box">
+              <User size={20} />
+            </span>
+            {!isCollapsed && <span className="soc-nav-label">Admin</span>}
+            {activeTab === 'admin' && <span className="soc-active-indicator" />}
+          </button>
+
+          {/* Collapsed Mode Tooltip */}
+          {isCollapsed && hoveredTab === 'admin' && (
+            <div className="soc-sidebar-tooltip" role="tooltip">
+              Admin
+            </div>
+          )}
+        </div>
+      </div>
     </aside>
   );
-};
-
-const styles = {
-  sidebar: {
-    position: 'fixed',
-    top: 0,
-    left: 0,
-    height: '100vh',
-    width: '260px',
-    maxWidth: '85vw',
-    backgroundColor: 'var(--bg-secondary)',
-    borderRight: '1px solid var(--border-color)',
-    display: 'flex',
-    flexDirection: 'column',
-    padding: '0.85rem 0.75rem',
-    zIndex: 999,
-    boxShadow: '4px 0 24px rgba(0, 0, 0, 0.5)',
-    transition: 'transform 280ms cubic-bezier(0.4, 0, 0.2, 1)',
-    overflowY: 'auto'
-  },
-  sidebarHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingBottom: '0.75rem',
-    marginBottom: '0.5rem',
-    borderBottom: '1px solid var(--border-color)'
-  },
-  brandTitle: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.5rem'
-  },
-  brandText: {
-    fontSize: '0.9rem',
-    fontWeight: '700',
-    color: 'var(--text-primary)'
-  },
-  closeBtn: {
-    backgroundColor: 'transparent',
-    border: 'none',
-    cursor: 'pointer',
-    padding: '0.2rem',
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: '4px'
-  },
-  nav: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '1.1rem'
-  },
-  sectionGroup: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.35rem'
-  },
-  sectionHeader: {
-    padding: '0 0.75rem 0.2rem 0.75rem'
-  },
-  sectionTitle: {
-    fontSize: '0.66rem',
-    fontWeight: '700',
-    color: 'var(--text-muted)',
-    letterSpacing: '0.08em',
-    textTransform: 'uppercase'
-  },
-  itemList: {
-    display: 'flex',
-    flexDirection: 'column',
-    gap: '0.2rem'
-  },
-  navButton: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.65rem',
-    width: '100%',
-    padding: '0.5rem 0.75rem',
-    backgroundColor: 'transparent',
-    border: '1px solid transparent',
-    borderRadius: '6px',
-    color: 'var(--text-secondary)',
-    cursor: 'pointer',
-    textAlign: 'left',
-    transition: 'all 0.15s ease',
-    outline: 'none'
-  },
-  activeNavButton: {
-    backgroundColor: 'var(--bg-card)',
-    border: '1px solid var(--border-subtle)',
-    color: 'var(--text-primary)'
-  },
-  navLabel: {
-    fontSize: '0.81rem',
-    fontWeight: '500',
-    color: 'var(--text-secondary)'
-  },
-  activeNavLabel: {
-    fontWeight: '600',
-    color: 'var(--text-primary)'
-  }
 };
 
 export default Sidebar;

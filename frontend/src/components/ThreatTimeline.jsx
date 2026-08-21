@@ -4,8 +4,8 @@ import { ChevronDown, ChevronRight, Clock, Search, Filter } from 'lucide-react';
 
 /**
  * Presentational Chronological Threat Telemetry Timeline
- * Consumes global `allEvents` array passed from App.jsx parent.
- * Performs zero backend API fetches.
+ * Unified 1-row structured table-like grid layout:
+ * [Expand Arrow] [Timestamp] [Event Name] [Source IP → Dest IP] [Status] [Severity]
  */
 const ThreatTimeline = ({ allEvents = null }) => {
   const [severityFilter, setSeverityFilter] = useState('');
@@ -141,7 +141,7 @@ const ThreatTimeline = ({ allEvents = null }) => {
 
             return (
               <div key={id} className="timeline-item" style={styles.timelineItem}>
-                {/* Vertical Connector Line & Marker */}
+                {/* Vertical Connector Line & Marker Dot */}
                 <div style={styles.markerColumn}>
                   <div
                     style={{
@@ -155,29 +155,42 @@ const ThreatTimeline = ({ allEvents = null }) => {
 
                 {/* Event Content Card */}
                 <div style={styles.itemContent}>
-                  {/* Collapsed Header Bar */}
+                  {/* Cohesive 1-Row Table-Like Grid Header */}
                   <div
                     onClick={() => toggleExpand(id)}
+                    className="timeline-item-header"
                     style={{
                       ...styles.itemHeader,
                       borderLeftColor: markerColor
                     }}
                   >
-                    <div style={styles.headerLeft}>
+                    {/* 1. Expand Arrow (24px) */}
+                    <div style={styles.expandIconBox}>
                       {isExpanded ? (
-                        <ChevronDown size={15} color="var(--text-muted)" />
+                        <ChevronDown size={14} color="var(--text-muted)" />
                       ) : (
-                        <ChevronRight size={15} color="var(--text-muted)" />
+                        <ChevronRight size={14} color="var(--text-muted)" />
                       )}
-                      <span style={styles.timestamp}>{timeStr}</span>
-                      <strong style={styles.eventType}>{evt.event_type}</strong>
                     </div>
 
-                    <div style={styles.headerRight}>
-                      <span style={styles.ipFlow}>
-                        {evt.source_ip || 'N/A'} → {evt.destination_ip || 'N/A'}
-                      </span>
+                    {/* 2. Timestamp (185px) */}
+                    <span style={styles.timestamp}>{timeStr}</span>
+
+                    {/* 3. Event Name (minmax(140px, 1fr)) */}
+                    <strong style={styles.eventType}>{evt.event_type}</strong>
+
+                    {/* 4. IP Information (260px) */}
+                    <span style={styles.ipFlow}>
+                      {evt.source_ip || 'N/A'} → {evt.destination_ip || 'N/A'}
+                    </span>
+
+                    {/* 5. Status Badge (90px) */}
+                    <div style={styles.statusCol}>
                       <Badge type="status" value={evt.event_status} />
+                    </div>
+
+                    {/* 6. Severity Badge (75px) */}
+                    <div style={styles.severityCol}>
                       <Badge type="severity" value={evt.event_severity} />
                     </div>
                   </div>
@@ -363,47 +376,71 @@ const styles = {
     flex: 1,
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.35rem'
+    gap: '0.35rem',
+    minWidth: 0
   },
   itemHeader: {
-    display: 'flex',
+    display: 'grid',
+    gridTemplateColumns: '24px 185px minmax(140px, 1fr) 260px 90px 75px',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    gap: '14px',
     backgroundColor: 'var(--bg-secondary)',
     border: '1px solid var(--border-color)',
     borderLeft: '3px solid transparent',
     borderRadius: '6px',
-    padding: '0.5rem 0.75rem',
+    padding: '0.55rem 0.85rem',
     cursor: 'pointer',
-    flexWrap: 'wrap',
-    gap: '0.5rem'
+    width: '100%',
+    boxSizing: 'border-box'
   },
-  headerLeft: {
+  expandIconBox: {
     display: 'flex',
     alignItems: 'center',
-    gap: '0.6rem'
+    justifyContent: 'center',
+    width: '24px',
+    flexShrink: 0
   },
   timestamp: {
     fontSize: '0.75rem',
     color: 'var(--text-muted)',
-    fontFamily: 'var(--font-mono)'
+    fontFamily: 'var(--font-mono)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
   },
   eventType: {
     fontSize: '0.83rem',
-    color: 'var(--text-primary)'
-  },
-  headerRight: {
-    display: 'flex',
-    alignItems: 'center',
-    gap: '0.65rem'
+    color: 'var(--text-primary)',
+    fontWeight: '600',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis',
+    minWidth: 0
   },
   ipFlow: {
     fontSize: '0.75rem',
     fontFamily: 'var(--font-mono)',
-    color: 'var(--text-secondary)'
+    color: 'var(--text-secondary)',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  },
+  statusCol: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    width: '90px',
+    flexShrink: 0
+  },
+  severityCol: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'flex-start',
+    width: '75px',
+    flexShrink: 0
   },
   detailsDrawer: {
-    backgroundColor: 'rgba(15, 23, 42, 0.6)',
+    backgroundColor: 'var(--bg-secondary)',
     border: '1px solid var(--border-color)',
     borderRadius: '6px',
     padding: '0.75rem 1rem',

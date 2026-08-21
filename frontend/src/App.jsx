@@ -3,22 +3,32 @@ import Header from './components/Header';
 import Sidebar from './components/Sidebar';
 import MetricCard from './components/MetricCard';
 import SeverityPieChart from './charts/SeverityPieChart';
-import ThreatTrendChart from './charts/ThreatTrendChart';
 import TopAttackTypesChart from './charts/TopAttackTypesChart';
-import TopAffectedAssetsChart from './charts/TopAffectedAssetsChart';
-import IncidentTable from './components/IncidentTable';
 import ThreatTimeline from './components/ThreatTimeline';
-import AttackHeatmap from './components/AttackHeatmap';
+import AssetRiskOverviewCard from './components/AssetRiskOverviewCard';
 import AutoRefreshControl from './components/AutoRefreshControl';
 import LoginPage from './pages/LoginPage';
+import LandingPage from './pages/LandingPage';
 import SecurityEventsPage from './pages/SecurityEventsPage';
 import ThreatIntelPage from './pages/ThreatIntelPage';
-import AssetRiskPage from './pages/AssetRiskPage';
-import MitreCoveragePage from './pages/MitreCoveragePage';
-import IncidentResponsePage from './pages/IncidentResponsePage';
-import RiskPrioritizationPage from './pages/RiskPrioritizationPage';
-import { getMetrics, getEventTrend, getEvents, clearApiCache } from './services/api';
-import { Activity, AlertTriangle, ShieldAlert, Bug, ShieldCheck, AlertOctagon } from 'lucide-react';
+import EventInvestigationPage from './pages/EventInvestigationPage';
+import VulnerabilitiesPage from './pages/VulnerabilitiesPage';
+import AnalyticsPage from './pages/AnalyticsPage';
+import AdminProfilePage from './pages/AdminProfilePage';
+import { getMetrics, getEventTrend, getEvents, getThreatSummary, getAssets, clearApiCache } from './services/api';
+import { 
+  Activity, 
+  AlertTriangle, 
+  ShieldAlert, 
+  ShieldCheck, 
+  AlertOctagon, 
+  Cpu, 
+  Radar, 
+  LayoutDashboard, 
+  Search, 
+  BarChart2, 
+  User 
+} from 'lucide-react';
 
 /**
  * Safely parse stored analyst user session from localStorage or sessionStorage
@@ -78,9 +88,18 @@ function App() {
     }
   };
 
+  // Navigation view mode ('landing', 'login', 'dashboard')
+  const [currentView, setCurrentView] = useState('landing');
+
+  // Primary 6 navigation tabs: overview, events, threat-intel, investigation, vulnerabilities, analytics
   const [activeTab, setActiveTab] = useState('overview');
+  const [analyticsSubTab, setAnalyticsSubTab] = useState('risk');
+  const [investigationEventId, setInvestigationEventId] = useState('');
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [metrics, setMetrics] = useState(null);
+  const [overviewAssets, setOverviewAssets] = useState(null);
+  const [threatSummary, setThreatSummary] = useState(null);
   const [trendData, setTrendData] = useState([]);
   const [allOverviewEvents, setAllOverviewEvents] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -92,6 +111,23 @@ function App() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState(null);
   const isRefreshingRef = useRef(false);
+
+  // View Navigation Handlers
+  const handleEnterSOC = () => {
+    if (currentUser) {
+      setCurrentView('dashboard');
+    } else {
+      setCurrentView('login');
+    }
+  };
+
+  const handleNavigateLogin = () => {
+    setCurrentView('login');
+  };
+
+  const handleNavigateLanding = () => {
+    setCurrentView('landing');
+  };
 
   // Handle Login Success
   const handleLoginSuccess = (userData, rememberMe = true) => {
@@ -112,6 +148,7 @@ function App() {
       }
 
       setCurrentUser(payload);
+      setCurrentView('dashboard');
     }
   };
 
@@ -126,6 +163,7 @@ function App() {
     }
     setCurrentUser(null);
     setActiveTab('overview');
+    setCurrentView('landing');
   };
 
   // Centralized telemetry data fetching with batching & concurrency lock
@@ -142,13 +180,21 @@ function App() {
         clearApiCache();
       }
 
-      // Concurrently fetch overview KPI metrics and time-series trend data
-      const [metricsRes, trendRes] = await Promise.all([
+      // Concurrently fetch overview KPI metrics, M2 threat summary, trend data, and asset exposure
+      const [metricsRes, trendRes, threatSummaryRes, assetsRes] = await Promise.all([
         getMetrics({ forceRefresh: isManualRefresh }),
-        getEventTrend({ forceRefresh: isManualRefresh })
+        getEventTrend({ forceRefresh: isManualRefresh }),
+        getThreatSummary({ forceRefresh: isManualRefresh }).catch(() => null),
+        getAssets({ forceRefresh: isManualRefresh }).catch(() => null)
       ]);
       setMetrics(metricsRes);
       setTrendData(trendRes?.trend || []);
+      if (threatSummaryRes) {
+        setThreatSummary(threatSummaryRes);
+      }
+      if (assetsRes) {
+        setOverviewAssets(assetsRes);
+      }
 
       // Controlled batch fetching for complete event dataset (4 concurrent requests max)
       const firstPage = await getEvents({ page: 1, limit: 100 }, { forceRefresh: isManualRefresh });
@@ -189,7 +235,7 @@ function App() {
 
   // 60-second controlled auto-refresh interval lifecycle
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || currentView !== 'dashboard') return;
 
     // Initial load on mount or user login
     fetchDashboardData();
@@ -203,47 +249,98 @@ function App() {
     return () => {
       clearInterval(timerId);
     };
-  }, [currentUser, autoRefreshEnabled, fetchDashboardData]);
+  }, [currentUser, currentView, autoRefreshEnabled, fetchDashboardData]);
 
-  // Render LoginPage immediately if no valid user session exists
-  if (!currentUser) {
-    return <LoginPage onLoginSuccess={handleLoginSuccess} />;
+  // Render LandingPage when currentView is 'landing'
+  if (currentView === 'landing') {
+    return (
+      <LandingPage 
+        onEnterSOC={handleEnterSOC}
+        onNavigateLogin={handleNavigateLogin}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+        currentUser={currentUser}
+        onLoginSuccess={handleLoginSuccess}
+        initialMode="landing"
+      />
+    );
   }
 
-  const getSectionTitle = () => {
+  // Render unified LandingPage in 'signin' mode when currentView is 'login' or no user session exists
+  if (currentView === 'login' || !currentUser) {
+    return (
+      <LandingPage 
+        onEnterSOC={handleEnterSOC}
+        onNavigateLogin={handleNavigateLanding}
+        theme={theme}
+        onToggleTheme={handleToggleTheme}
+        currentUser={currentUser}
+        onLoginSuccess={handleLoginSuccess}
+        initialMode="signin"
+      />
+    );
+  }
+
+  const getSectionHeader = () => {
     switch (activeTab) {
       case 'overview':
-        return 'Security Operations Overview';
+        return {
+          title: 'Overview',
+          subtitle: 'Real-time threat telemetry and security risk analytics monitoring',
+          icon: LayoutDashboard
+        };
       case 'events':
-        return 'Security Events Log';
-      case 'risk':
-        return 'Security Risk & Alert Prioritization';
-      case 'mitre':
-        return 'MITRE ATT&CK Framework Coverage';
-      case 'incidents':
-        return 'Incident & Response Intelligence';
+        return {
+          title: 'Security Events',
+          subtitle: 'Real-time threat telemetry and security risk analytics monitoring',
+          icon: Activity
+        };
       case 'threat-intel':
-        return 'Threat Intelligence & Indicators';
-      case 'assets':
-        return 'Vulnerabilities & Asset Risk Coverage';
+        return {
+          title: 'Threat Intelligence',
+          subtitle: 'Real-time threat telemetry and security risk analytics monitoring',
+          icon: Radar
+        };
+      case 'investigation':
+        return {
+          title: 'Event Investigation',
+          subtitle: 'Real-time threat telemetry and security risk analytics monitoring',
+          icon: Search
+        };
+      case 'vulnerabilities':
+        return {
+          title: 'Vulnerabilities',
+          subtitle: 'Real-time vulnerability exposure and asset risk monitoring',
+          icon: ShieldAlert
+        };
+      case 'analytics':
+        return {
+          title: 'Analytics',
+          subtitle: 'Real-time threat telemetry and security risk analytics monitoring',
+          icon: BarChart2
+        };
+      case 'admin':
+        return {
+          title: 'Admin',
+          subtitle: 'Real-time threat telemetry and security risk analytics monitoring',
+          icon: User
+        };
       default:
-        return 'Security Operations Center';
+        return {
+          title: 'Security Operations Center',
+          subtitle: 'Real-time threat telemetry and security risk analytics monitoring',
+          icon: LayoutDashboard
+        };
     }
   };
 
+  const sectionInfo = getSectionHeader();
+  const SectionIcon = sectionInfo.icon;
+
   return (
     <div style={styles.appContainer}>
-      <Header 
-        currentUser={currentUser} 
-        onLogout={handleLogout} 
-        isSidebarOpen={isSidebarOpen}
-        onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
-        theme={theme}
-        onToggleTheme={handleToggleTheme}
-      />
-      
-      <div style={styles.bodyLayout}>
-        {/* Dark translucent backdrop when sidebar is open */}
+      <div style={styles.appShell}>
+        {/* Dark translucent backdrop when sidebar is open on mobile */}
         {isSidebarOpen && (
           <div 
             onClick={() => setIsSidebarOpen(false)}
@@ -251,39 +348,58 @@ function App() {
           />
         )}
 
+        {/* 1. LEFT: SIDEBAR */}
         <Sidebar 
           isOpen={isSidebarOpen} 
           onClose={() => setIsSidebarOpen(false)}
+          isCollapsed={isSidebarCollapsed}
+          onToggleCollapse={() => setIsSidebarCollapsed((prev) => !prev)}
           activeTab={activeTab} 
           onSelectTab={(tabId) => {
             setActiveTab(tabId);
             setIsSidebarOpen(false);
-          }} 
+          }}
         />
-        
-        <main style={styles.mainContent}>
-          <div style={styles.headerSection}>
-            <div>
-              <h2 className="section-title" style={{ fontSize: '1.25rem', margin: 0 }}>
-                {getSectionTitle()}
-              </h2>
-              <p className="muted" style={{ fontSize: '0.8rem', marginTop: '0.15rem' }}>
-                Real-time threat telemetry and security risk analytics monitoring
-              </p>
+
+        {/* 2. RIGHT: TOP BAR (HEADER) + MAIN CONTENT AREA */}
+        <div style={styles.contentColumn}>
+          <Header 
+            currentUser={currentUser} 
+            onLogout={handleLogout} 
+            isSidebarOpen={isSidebarOpen}
+            onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+            theme={theme}
+            onToggleTheme={handleToggleTheme}
+            onNavigateLanding={handleNavigateLanding}
+            onNavigateAdmin={() => setActiveTab('admin')}
+            activeTab={activeTab}
+          />
+          
+          <main className="soc-main-content-layout">
+            <div style={styles.headerSection}>
+              <div>
+                <h2 className="section-title" style={{ fontSize: '1.85rem', fontWeight: '700', margin: 0, display: 'flex', alignItems: 'center', gap: '0.65rem' }}>
+                  {SectionIcon && <SectionIcon size={28} color="var(--color-accent)" style={{ flexShrink: 0 }} />}
+                  <span>{sectionInfo.title}</span>
+                </h2>
+                <p className="muted" style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
+                  {sectionInfo.subtitle}
+                </p>
+              </div>
+
+              {activeTab === 'overview' && (
+                <AutoRefreshControl
+                  isRefreshing={isRefreshing}
+                  lastUpdated={lastUpdated}
+                  autoRefreshEnabled={autoRefreshEnabled}
+                  onRefresh={() => fetchDashboardData(true)}
+                  onToggle={() => setAutoRefreshEnabled((prev) => !prev)}
+                  refreshError={refreshError}
+                />
+              )}
             </div>
 
-            {activeTab === 'overview' && (
-              <AutoRefreshControl
-                isRefreshing={isRefreshing}
-                lastUpdated={lastUpdated}
-                autoRefreshEnabled={autoRefreshEnabled}
-                onRefresh={() => fetchDashboardData(true)}
-                onToggle={() => setAutoRefreshEnabled((prev) => !prev)}
-                refreshError={refreshError}
-              />
-            )}
-          </div>
-
+          {/* 1. OVERVIEW PAGE */}
           {activeTab === 'overview' && (
             <div>
               {loading && (
@@ -300,42 +416,35 @@ function App() {
 
               {!loading && !error && metrics && (
                 <div style={styles.dashboardSection}>
-                  {/* KPI Cards 6-card Row */}
+                  {/* KPI Cards: EXACTLY 5 Required Cards */}
                   <div style={styles.kpiGrid}>
                     <MetricCard
-                      title="Total Security Events"
+                      title="Total Events"
                       value={metrics.overview?.total_events ?? 0}
                       subtitle="Monitored event logs"
                       icon={Activity}
                       variant="accent"
                     />
                     <MetricCard
-                      title="Critical Events"
+                      title="Critical Threats"
                       value={metrics.overview?.critical_events ?? 0}
                       subtitle="Immediate attention required"
                       icon={AlertTriangle}
                       variant="critical"
                     />
                     <MetricCard
-                      title="High Severity Events"
+                      title="High Severity Alerts"
                       value={metrics.overview?.high_events ?? 0}
                       subtitle="High-risk threat telemetry"
                       icon={ShieldAlert}
                       variant="high"
                     />
                     <MetricCard
-                      title="Vulnerability Events"
+                      title="Vulnerabilities"
                       value={metrics.security_indicators?.events_with_vulnerability_id ?? 0}
                       subtitle="Events linked to vuln IDs"
                       icon={ShieldCheck}
                       variant="warning"
-                    />
-                    <MetricCard
-                      title="Malware Detected"
-                      value={metrics.security_indicators?.malware_detected ?? 0}
-                      subtitle="Malware flag occurrences"
-                      icon={Bug}
-                      variant="critical"
                     />
                     <MetricCard
                       title="Active Incidents"
@@ -346,75 +455,163 @@ function App() {
                     />
                   </div>
 
-                  {/* Charts Grid Row: Severity Donut + Threat Trend */}
+                  {/* Milestone 2 AI Threat Detection Overview Banner */}
+                  {threatSummary && (
+                    <div className="panel" style={{ padding: '0.85rem 1.25rem', backgroundColor: 'var(--bg-card)', border: '1px solid var(--border-color)', borderRadius: '8px' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.75rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <Cpu size={18} color="var(--color-accent)" />
+                          <div>
+                            <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>
+                              AI THREAT DETECTION OVERVIEW
+                            </span>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', display: 'block' }}>
+                              Isolation Forest ML & Threat Classification (Step 8 APIs)
+                            </span>
+                          </div>
+                        </div>
+
+                        <div style={{ display: 'flex', gap: '1.25rem', flexWrap: 'wrap' }}>
+                          <div>
+                            <span style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted)', display: 'block' }}>TOTAL EVENTS</span>
+                            <span style={{ fontSize: '0.95rem', fontWeight: '800', fontFamily: 'var(--font-mono)', color: 'var(--text-primary)' }}>
+                              {threatSummary.total_events?.toLocaleString()}
+                            </span>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted)', display: 'block' }}>ANOMALIES DETECTED</span>
+                            <span style={{ fontSize: '0.95rem', fontWeight: '800', fontFamily: 'var(--font-mono)', color: 'var(--color-critical)' }}>
+                              {threatSummary.anomalies_detected?.toLocaleString()}
+                            </span>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted)', display: 'block' }}>NORMAL EVENTS</span>
+                            <span style={{ fontSize: '0.95rem', fontWeight: '800', fontFamily: 'var(--font-mono)', color: 'var(--color-accent)' }}>
+                              {threatSummary.normal_events?.toLocaleString()}
+                            </span>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted)', display: 'block' }}>HIGH / CRITICAL THREATS</span>
+                            <span style={{ fontSize: '0.95rem', fontWeight: '800', fontFamily: 'var(--font-mono)', color: 'var(--color-high)' }}>
+                              {(threatSummary.threat_levels?.['High Threat'] || 0) + (threatSummary.threat_levels?.['Critical Threat'] || 0)}
+                            </span>
+                          </div>
+                          <div>
+                            <span style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--text-muted)', display: 'block' }}>AVG CONFIDENCE SCORE</span>
+                            <span style={{ fontSize: '0.95rem', fontWeight: '800', fontFamily: 'var(--font-mono)', color: 'var(--color-warning)' }}>
+                              {threatSummary.average_confidence_score?.toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+
+                        <button 
+                          className="soc-button" 
+                          onClick={() => {
+                            setInvestigationEventId('EVT00034');
+                            setActiveTab('investigation');
+                          }}
+                          style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
+                        >
+                          Investigate Events →
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Charts Grid: Severity Donut + Attack Types */}
                   <div style={styles.chartsGrid}>
                     <SeverityPieChart overviewData={metrics.overview} />
-                    <ThreatTrendChart trendData={trendData} />
-                  </div>
-
-                  {/* Dynamic Top Attack Types Bar Chart Row */}
-                  <div>
                     <TopAttackTypesChart allEvents={allOverviewEvents} />
                   </div>
 
-                  {/* Dynamic Top Affected Assets Bar Chart Row */}
+                  {/* Asset Risk & Exposure Compact Overview Component */}
                   <div>
-                    <TopAffectedAssetsChart allEvents={allOverviewEvents} />
-                  </div>
-
-                  {/* Recent & Active Incidents Compact Overview Widget */}
-                  <div>
-                    <IncidentTable
+                    <AssetRiskOverviewCard
                       allEvents={allOverviewEvents}
-                      onNavigateToIncidents={() => setActiveTab('incidents')}
+                      onNavigateToAssetRisk={() => {
+                        setAnalyticsSubTab('assets');
+                        setActiveTab('analytics');
+                      }}
                     />
                   </div>
 
-                  {/* Chronological Threat Telemetry Timeline */}
+                  {/* Chronological Threat Telemetry Timeline (KEPT ON OVERVIEW) */}
                   <div>
                     <ThreatTimeline allEvents={allOverviewEvents} />
-                  </div>
-
-                  {/* SOC Attack Activity Heatmap (7 Days x 24 Hours) */}
-                  <div>
-                    <AttackHeatmap allEvents={allOverviewEvents} />
                   </div>
                 </div>
               )}
             </div>
           )}
 
+          {/* 2. SECURITY EVENTS PAGE */}
           {activeTab === 'events' && <SecurityEventsPage />}
 
-          {activeTab === 'risk' && <RiskPrioritizationPage allEvents={allOverviewEvents} />}
+          {/* 3. THREAT INTELLIGENCE PAGE */}
+          {activeTab === 'threat-intel' && (
+            <ThreatIntelPage 
+              allEvents={allOverviewEvents} 
+              trendData={trendData} 
+              onInvestigateEvent={(eventId) => {
+                setInvestigationEventId(eventId);
+                setActiveTab('investigation');
+              }}
+            />
+          )}
 
-          {activeTab === 'mitre' && <MitreCoveragePage />}
+          {/* 4. EVENT INVESTIGATION PAGE (NEW DEDICATED PAGE) */}
+          {activeTab === 'investigation' && (
+            <EventInvestigationPage 
+              initialEventId={investigationEventId}
+            />
+          )}
 
-          {activeTab === 'incidents' && <IncidentResponsePage allEvents={allOverviewEvents} />}
+          {/* 5. VULNERABILITIES PAGE (NEW DEDICATED PAGE) */}
+          {activeTab === 'vulnerabilities' && <VulnerabilitiesPage />}
 
-          {activeTab === 'threat-intel' && <ThreatIntelPage />}
+          {/* 6. ANALYTICS HUB */}
+          {activeTab === 'analytics' && (
+            <AnalyticsPage 
+              allEvents={allOverviewEvents} 
+              initialSubTab={analyticsSubTab}
+            />
+          )}
 
-          {activeTab === 'assets' && <AssetRiskPage />}
+          {/* 7. ADMIN PROFILE PAGE */}
+          {activeTab === 'admin' && (
+            <AdminProfilePage 
+              currentUser={currentUser} 
+              onLogout={handleLogout}
+            />
+          )}
         </main>
       </div>
     </div>
+  </div>
   );
 }
 
 const styles = {
   appContainer: {
-    display: 'flex',
-    flexDirection: 'column',
     height: '100vh',
     width: '100vw',
     overflow: 'hidden',
     backgroundColor: 'var(--bg-primary)'
   },
-  bodyLayout: {
+  appShell: {
     display: 'flex',
-    flex: 1,
+    height: '100vh',
+    width: '100vw',
     overflow: 'hidden',
     position: 'relative'
+  },
+  contentColumn: {
+    display: 'flex',
+    flexDirection: 'column',
+    flex: 1,
+    minWidth: 0,
+    height: '100vh',
+    overflow: 'hidden'
   },
   backdrop: {
     position: 'fixed',
@@ -426,12 +623,6 @@ const styles = {
     backdropFilter: 'blur(2px)',
     zIndex: 998,
     transition: 'opacity 0.25s ease'
-  },
-  mainContent: {
-    flex: 1,
-    padding: '1.25rem 1.5rem',
-    overflowY: 'auto',
-    backgroundColor: 'var(--bg-primary)'
   },
   headerSection: {
     marginBottom: '1.25rem',

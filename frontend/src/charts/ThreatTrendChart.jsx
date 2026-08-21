@@ -109,7 +109,7 @@ const ThreatTrendChart = ({ trendData }) => {
               type="monotone" 
               dataKey="high" 
               name="High Severity" 
-              stroke="var(--color-high)" 
+              stroke="#0077B6" 
               strokeWidth={2} 
               dot={false} 
               activeDot={{ r: 5 }} 

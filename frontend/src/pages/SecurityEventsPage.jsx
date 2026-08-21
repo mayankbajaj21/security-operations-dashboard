@@ -690,7 +690,6 @@ const styles = {
     outline: 'none'
   },
   dateInput: {
-    colorScheme: 'dark',
     cursor: 'pointer'
   },
   ipInput: {
