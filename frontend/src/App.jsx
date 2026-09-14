@@ -130,18 +130,32 @@ function App() {
   };
 
   // Handle Login Success
-  const handleLoginSuccess = (userData, rememberMe = true) => {
+  const handleLoginSuccess = (userData, rememberMe = true, accessToken = null) => {
     if (userData) {
-      const payload = typeof userData === 'string' ? { name: userData, email: userData } : userData;
+      const payload = typeof userData === 'string'
+        ? { name: userData, email: userData, role: 'SOC Analyst' }
+        : {
+            name: userData.full_name || userData.name || 'SOC Analyst',
+            email: userData.email,
+            role: userData.role || 'SOC Analyst'
+          };
       const jsonStr = JSON.stringify(payload);
 
       try {
         if (rememberMe) {
           localStorage.setItem('soc_analyst_user', jsonStr);
           sessionStorage.removeItem('soc_analyst_user');
+          if (accessToken) {
+            localStorage.setItem('soc_access_token', accessToken);
+            sessionStorage.removeItem('soc_access_token');
+          }
         } else {
           sessionStorage.setItem('soc_analyst_user', jsonStr);
           localStorage.removeItem('soc_analyst_user');
+          if (accessToken) {
+            sessionStorage.setItem('soc_access_token', accessToken);
+            localStorage.removeItem('soc_access_token');
+          }
         }
       } catch (err) {
         console.error('Failed to save session storage:', err);
@@ -158,6 +172,8 @@ function App() {
     try {
       localStorage.removeItem('soc_analyst_user');
       sessionStorage.removeItem('soc_analyst_user');
+      localStorage.removeItem('soc_access_token');
+      sessionStorage.removeItem('soc_access_token');
     } catch (err) {
       console.error('Failed to clear session storage:', err);
     }

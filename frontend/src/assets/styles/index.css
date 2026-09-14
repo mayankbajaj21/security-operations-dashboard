@@ -301,6 +301,12 @@ h4, h5, h6, .card-title {
   border: 1px solid rgba(251, 146, 60, 0.3);
 }
 
+.severity-moderate {
+  color: #fbbf24;
+  background-color: rgba(251, 191, 36, 0.12);
+  border: 1px solid rgba(251, 191, 36, 0.3);
+}
+
 .severity-medium {
   color: var(--color-medium);
   background-color: rgba(250, 204, 21, 0.12);
@@ -324,6 +330,12 @@ h4, h5, h6, .card-title {
   color: #c2410c;
   background-color: #ffedd5;
   border: 1px solid rgba(194, 65, 12, 0.32);
+}
+
+[data-theme="light"] .severity-moderate {
+  color: #d97706;
+  background-color: #fef3c7;
+  border: 1px solid rgba(217, 119, 6, 0.35);
 }
 
 [data-theme="light"] .severity-medium {
@@ -366,6 +378,30 @@ h4, h5, h6, .card-title {
   border: 1px solid rgba(99, 102, 241, 0.3);
 }
 
+.status-open {
+  color: var(--color-critical);
+  background-color: rgba(244, 63, 94, 0.12);
+  border: 1px solid rgba(244, 63, 94, 0.3);
+}
+
+.status-investigating {
+  color: var(--color-accent);
+  background-color: rgba(6, 182, 212, 0.12);
+  border: 1px solid rgba(6, 182, 212, 0.3);
+}
+
+.status-resolved {
+  color: var(--color-success);
+  background-color: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+}
+
+.status-false-positive {
+  color: var(--text-muted);
+  background-color: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
 /* Light Theme High-Contrast Status Overrides */
 [data-theme="light"] .status-success {
   color: #15803d;
@@ -391,6 +427,30 @@ h4, h5, h6, .card-title {
   border: 1px solid rgba(67, 56, 202, 0.32);
 }
 
+[data-theme="light"] .status-open {
+  color: #b91c1c;
+  background-color: #fee2e2;
+  border: 1px solid rgba(185, 28, 28, 0.32);
+}
+
+[data-theme="light"] .status-investigating {
+  color: #0369a1;
+  background-color: #e0f2fe;
+  border: 1px solid rgba(3, 105, 161, 0.32);
+}
+
+[data-theme="light"] .status-resolved {
+  color: #15803d;
+  background-color: #dcfce7;
+  border: 1px solid rgba(21, 128, 61, 0.32);
+}
+
+[data-theme="light"] .status-false-positive {
+  color: #475569;
+  background-color: #f1f5f9;
+  border: 1px solid rgba(71, 85, 105, 0.32);
+}
+
 /* ==========================================================================
    SOC Table Styles & Controls
    ========================================================================== */
@@ -401,6 +461,55 @@ h4, h5, h6, .card-title {
   border: 1px solid var(--border-color);
   border-radius: 6px;
   background-color: var(--bg-card);
+}
+
+.soc-table-fit-container {
+  width: 100%;
+  overflow-x: hidden;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background-color: var(--bg-card);
+}
+
+.soc-table-fit {
+  width: 100%;
+  table-layout: fixed;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: 0.74rem;
+}
+
+.soc-table-fit th {
+  background-color: var(--bg-secondary);
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  font-size: 0.67rem;
+  letter-spacing: 0.03em;
+  padding: 0.45rem 0.35rem;
+  border-bottom: 1px solid var(--border-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.soc-table-fit td {
+  padding: 0.42rem 0.35rem;
+  border-bottom: 1px solid var(--border-color);
+  color: var(--text-primary);
+  font-size: 0.73rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.soc-table-fit tbody tr {
+  transition: background-color 0.15s ease;
+}
+
+.soc-table-fit tbody tr:hover {
+  background-color: var(--bg-card-hover);
 }
 
 .soc-table {

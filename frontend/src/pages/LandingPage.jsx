@@ -18,33 +18,7 @@ import {
   Cpu
 } from 'lucide-react';
 import InfosysLogo from '../components/InfosysLogo';
-
-const DEMO_USERS_KEY = 'soc_demo_users';
-const DEFAULT_DEMO_USER = {
-  name: 'SOC Analyst',
-  email: 'analyst@soc.internal',
-  password: 'Password123!'
-};
-
-/**
- * Retrieve demo users database from localStorage
- */
-const getDemoUsers = () => {
-  try {
-    const raw = localStorage.getItem(DEMO_USERS_KEY);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-    }
-  } catch (e) {
-    console.error('Failed to read demo users:', e);
-  }
-  const initial = [DEFAULT_DEMO_USER];
-  try {
-    localStorage.setItem(DEMO_USERS_KEY, JSON.stringify(initial));
-  } catch (e) { }
-  return initial;
-};
+import { loginUser, registerUser } from '../services/api';
 
 /**
  * Dynamic Animated Cyber Particle Canvas Background
@@ -319,6 +293,7 @@ const LandingPage = ({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(true);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   // Password Visibility
   const [showPassword, setShowPassword] = useState(false);
@@ -376,18 +351,18 @@ const LandingPage = ({
   };
 
   const handleGoogleClick = () => {
-    setInfoNotice('Google sign-in will be available when OAuth is configured.');
+    setInfoNotice('Google sign-in will be available when enterprise OAuth provider is configured.');
     setErrorMessage('');
   };
 
   const handleForgotPassword = (e) => {
     e.preventDefault();
-    setInfoNotice('Password reset is not configured in demo mode. Use default password: Password123!');
+    setInfoNotice('Please contact your SOC security administrator to reset analyst account credentials.');
     setErrorMessage('');
   };
 
-  // Handle Auth Form Submission
-  const handleSubmit = (e) => {
+  // Handle Auth Form Submission via Backend REST API
+  const handleSubmit = async (e) => {
     e.preventDefault();
     setErrorMessage('');
     setInfoNotice('');
@@ -413,32 +388,28 @@ const LandingPage = ({
         return;
       }
 
-      // Check if user exists
-      const users = getDemoUsers();
-      const existing = users.find((u) => u.email.toLowerCase() === email.trim().toLowerCase());
-      if (existing) {
-        setErrorMessage('An account with this email address already exists.');
-        return;
-      }
-
-      // Save Demo User
-      const newUser = {
-        name: fullName.trim(),
-        email: email.trim().toLowerCase(),
-        password: password
-      };
-
+      setIsSubmitting(true);
       try {
-        const updatedUsers = [...users, newUser];
-        localStorage.setItem(DEMO_USERS_KEY, JSON.stringify(updatedUsers));
-      } catch (err) {
-        console.error('Failed to save demo user:', err);
-      }
+        const response = await registerUser({
+          email: email.trim().toLowerCase(),
+          password: password,
+          full_name: fullName.trim(),
+          role: 'SOC Analyst'
+        });
 
-      if (onLoginSuccess) {
-        onLoginSuccess(newUser, rememberMe);
-      } else if (onEnterSOC) {
-        onEnterSOC();
+        if (onLoginSuccess) {
+          onLoginSuccess(response.user, rememberMe, response.access_token);
+        } else if (onEnterSOC) {
+          onEnterSOC();
+        }
+      } catch (err) {
+        if (err.response && err.response.data && err.response.data.detail) {
+          setErrorMessage(err.response.data.detail);
+        } else {
+          setErrorMessage('Unable to connect to authentication service.');
+        }
+      } finally {
+        setIsSubmitting(false);
       }
     } else {
       // Sign-In Validation
@@ -451,21 +422,26 @@ const LandingPage = ({
         return;
       }
 
-      const users = getDemoUsers();
-      const matched = users.find(
-        (u) => u.email.toLowerCase() === email.trim().toLowerCase() && u.password === password
-      );
+      setIsSubmitting(true);
+      try {
+        const response = await loginUser(email.trim().toLowerCase(), password);
 
-      if (!matched) {
-        setErrorMessage('Invalid email or password.');
-        return;
-      }
-
-      // Successful Sign-In -> directly calls onLoginSuccess to switch view to dashboard
-      if (onLoginSuccess) {
-        onLoginSuccess(matched, rememberMe);
-      } else if (onEnterSOC) {
-        onEnterSOC();
+        // Successful Sign-In -> pass safe user object and JWT token
+        if (onLoginSuccess) {
+          onLoginSuccess(response.user, rememberMe, response.access_token);
+        } else if (onEnterSOC) {
+          onEnterSOC();
+        }
+      } catch (err) {
+        if (err.response && (err.response.status === 401 || err.response.status === 400)) {
+          setErrorMessage('Invalid email or password.');
+        } else if (err.response && err.response.status === 422) {
+          setErrorMessage('Please provide a valid email and password.');
+        } else {
+          setErrorMessage('Unable to connect to authentication service.');
+        }
+      } finally {
+        setIsSubmitting(false);
       }
     }
   };
@@ -713,8 +689,17 @@ const LandingPage = ({
                       </div>
                     )}
 
-                    <button type="submit" className="soc-hero-btn soc-auth-submit" id="sign-in-submit-btn">
-                      <span>{isSignUp ? 'Create Account' : 'Sign In'}</span>
+                    <button
+                      type="submit"
+                      className="soc-hero-btn soc-auth-submit"
+                      id="sign-in-submit-btn"
+                      disabled={isSubmitting}
+                    >
+                      <span>
+                        {isSubmitting
+                          ? (isSignUp ? 'Creating Account...' : 'Signing In...')
+                          : (isSignUp ? 'Create Account' : 'Sign In')}
+                      </span>
                       <ArrowRight size={18} className="soc-btn-arrow" />
                     </button>
                   </form>

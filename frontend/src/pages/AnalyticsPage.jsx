@@ -1,20 +1,31 @@
 import React, { useState, useEffect } from 'react';
 import RiskPrioritizationPage from './RiskPrioritizationPage';
 import IncidentResponsePage from './IncidentResponsePage';
+import AttackChainPage from './AttackChainPage';
+import SecurityIntelligencePage from './SecurityIntelligencePage';
 import MitreCoveragePage from './MitreCoveragePage';
 import AiThreatDetectionPage from './AiThreatDetectionPage';
 import AssetRiskPage from './AssetRiskPage';
-import { Flame, AlertOctagon, Target, Cpu, Server } from 'lucide-react';
+import { 
+  Flame, 
+  AlertOctagon, 
+  GitCommit, 
+  Radar, 
+  Target, 
+  Cpu, 
+  Server 
+} from 'lucide-react';
 
 /**
  * Analytics Hub Page
- * Houses existing analytical modules with sub-tab switching:
- * - Risk Prioritization
- * - Incident Response
- * - MITRE ATT&CK Coverage
- * - AI Threat Detection & Model Diagnostics
- * - Asset Risk Exposure
- * (Old Threat Intelligence is removed as it is now primary navigation #3)
+ * Houses M3 Analytical and Security Intelligence Modules:
+ * 1. Risk Prioritization & Overview (M3 Risk Engine & 5-tier distribution)
+ * 2. Incident Response & Investigation (M3 Priority Incidents & Lifecycle State Machine)
+ * 3. Attack Chain (M3 Correlated multi-stage kill chain progression)
+ * 4. Security Intelligence (M3 IoC, MITRE, CVE, and Risk contribution)
+ * 5. MITRE ATT&CK Coverage (M1/M2 coverage matrix)
+ * 6. AI Threat Detection & Model Diagnostics (M2 Isolation Forest)
+ * 7. Asset Risk Exposure (M1/M2 asset telemetry)
  */
 const AnalyticsPage = ({ allEvents = null, initialSubTab = 'risk' }) => {
   const [activeSubTab, setActiveSubTab] = useState(initialSubTab);
@@ -26,8 +37,10 @@ const AnalyticsPage = ({ allEvents = null, initialSubTab = 'risk' }) => {
   }, [initialSubTab]);
 
   const subTabs = [
-    { id: 'risk', label: 'Risk Prioritization', icon: Flame },
-    { id: 'incidents', label: 'Incident Response', icon: AlertOctagon },
+    { id: 'risk', label: 'Risk Overview', icon: Flame },
+    { id: 'incidents', label: 'Priority Incidents', icon: AlertOctagon },
+    { id: 'attack-chain', label: 'Attack Chain', icon: GitCommit },
+    { id: 'security-intel', label: 'Security Intelligence', icon: Radar },
     { id: 'mitre', label: 'MITRE ATT&CK', icon: Target },
     { id: 'ai-detection', label: 'AI Threat Detection', icon: Cpu },
     { id: 'assets', label: 'Asset Risk', icon: Server }
@@ -61,8 +74,10 @@ const AnalyticsPage = ({ allEvents = null, initialSubTab = 'risk' }) => {
 
       {/* Sub-Tab Page Content */}
       <div style={styles.subContent}>
-        {activeSubTab === 'risk' && <RiskPrioritizationPage allEvents={allEvents} />}
-        {activeSubTab === 'incidents' && <IncidentResponsePage allEvents={allEvents} />}
+        {activeSubTab === 'risk' && <RiskPrioritizationPage />}
+        {activeSubTab === 'incidents' && <IncidentResponsePage />}
+        {activeSubTab === 'attack-chain' && <AttackChainPage />}
+        {activeSubTab === 'security-intel' && <SecurityIntelligencePage />}
         {activeSubTab === 'mitre' && <MitreCoveragePage />}
         {activeSubTab === 'ai-detection' && <AiThreatDetectionPage />}
         {activeSubTab === 'assets' && <AssetRiskPage allEvents={allEvents} />}
