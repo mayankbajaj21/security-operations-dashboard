@@ -3,7 +3,7 @@ import { getMitre } from '../services/api';
 import MetricCard from '../components/MetricCard';
 import Badge from '../components/Badge';
 import { Activity, Target, ShieldAlert, Percent, Info } from 'lucide-react';
-import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid } from 'recharts';
 
 const MitreCoveragePage = () => {
   const [mitreData, setMitreData] = useState(null);
@@ -177,48 +177,69 @@ const MitreCoveragePage = () => {
             </div>
           </div>
 
-          {/* Mapped Techniques Table */}
-          <div style={{ marginTop: '0.5rem' }}>
-            <h3 className="section-title" style={{ marginBottom: '0.75rem' }}>
-              Mapped MITRE ATT&CK Techniques
-            </h3>
-
-            {mappings.length === 0 ? (
-              <div className="panel" style={styles.statePanel}>
-                <p className="muted">No MITRE ATT&CK mappings available in reference database.</p>
+          {/* M4 Task 6: MITRE Technique Analysis */}
+          <div className="panel" style={{ padding: '1.25rem', marginTop: '0.5rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <div>
+                <h3 className="section-title" style={{ margin: 0 }}>MITRE Technique Analysis</h3>
+                <p className="muted" style={{ fontSize: '0.75rem', marginTop: '0.2rem' }}>
+                  Authoritative technique correlation, event counts, and risk telemetry
+                </p>
               </div>
-            ) : (
-              <div className="soc-table-container">
-                <table className="soc-table">
-                  <thead>
-                    <tr>
-                      <th>Event Type</th>
-                      <th>MITRE ID</th>
-                      <th>Technique Name</th>
-                      <th>Tactic</th>
-                      <th>Mapped Event Count</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {mappings.map((item, idx) => (
-                      <tr key={item.mitre_id || idx} style={{ backgroundColor: 'rgba(6, 182, 212, 0.04)' }}>
-                        <td style={{ fontWeight: '600' }}>{item.event_type}</td>
+            </div>
+
+            {/* Distribution Chart */}
+            {Array.isArray(mitreData?.distribution) && mitreData.distribution.length > 0 ? (
+              <div style={{ marginBottom: '1.5rem', height: '180px', width: '100%' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={mitreData.distribution} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border-subtle)" opacity={0.5} />
+                    <XAxis dataKey="technique" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
+                    <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} />
+                    <Tooltip contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', borderRadius: '6px', fontSize: '0.8rem' }} />
+                    <Bar dataKey="events" fill="#06b6d4" radius={[4, 4, 0, 0]} name="Events" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : null}
+
+            {/* Table: Technique | Name | Events | Risk */}
+            <div className="soc-table-container">
+              <table className="soc-table">
+                <thead>
+                  <tr>
+                    <th>Technique</th>
+                    <th>Name</th>
+                    <th>Events</th>
+                    <th>Risk</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {Array.isArray(mitreData?.techniques) && mitreData.techniques.length > 0 ? (
+                    mitreData.techniques.map((item, idx) => (
+                      <tr key={item.technique || idx}>
                         <td style={styles.monoCell}>
-                          <span className="badge status-detected">{item.mitre_id}</span>
+                          <span className="badge status-detected">{item.technique}</span>
                         </td>
-                        <td style={{ fontWeight: '600', color: 'var(--color-accent)' }}>{item.technique_name}</td>
+                        <td style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{item.name}</td>
+                        <td style={styles.monoCell}>
+                          <strong style={{ color: 'var(--color-accent)' }}>{item.events}</strong>
+                        </td>
                         <td>
-                          <span className="badge status-blocked">{item.tactic}</span>
-                        </td>
-                        <td style={styles.monoCell}>
-                          <strong style={{ color: 'var(--text-primary)' }}>{item.event_count?.toLocaleString()}</strong>
+                          <Badge type="risk" value={item.risk} />
                         </td>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={4} style={{ textAlign: 'center', padding: '1rem' }} className="muted">
+                        No MITRE technique analysis records available.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

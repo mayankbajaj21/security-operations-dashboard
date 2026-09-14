@@ -18,8 +18,11 @@ from backend.app.api.metrics import router as metrics_router
 from backend.app.api.mitre import router as mitre_router
 from backend.app.api.predictions import router as predictions_router
 from backend.app.api.risk import router as risk_router
+from backend.app.api.posture import router as posture_router
+from backend.app.api.reports import router as reports_router
 from backend.app.api.threat_intel import router as threat_intel_router
 from backend.app.api.trends import router as trends_router
+from backend.app.api.vulnerabilities import router as vulnerabilities_router
 from backend.app.services.auth_service import get_auth_service
 
 app = FastAPI(
@@ -55,6 +58,7 @@ app.include_router(assets_router)
 app.include_router(threat_intel_router)
 app.include_router(trends_router)
 app.include_router(predictions_router)
+app.include_router(vulnerabilities_router)
 
 # Register Authentication router under /api/v1, /v1, and /
 app.include_router(auth_router, prefix="/api/v1")
@@ -65,8 +69,16 @@ app.include_router(auth_router)
 app.include_router(risk_router, prefix="/api/v1")
 app.include_router(incidents_router, prefix="/api/v1")
 app.include_router(attack_chains_router, prefix="/api/v1")
+app.include_router(vulnerabilities_router, prefix="/api/v1")
 app.include_router(risk_router, prefix="/v1")
 app.include_router(incidents_router, prefix="/v1")
 app.include_router(attack_chains_router, prefix="/v1")
+app.include_router(vulnerabilities_router, prefix="/v1")
+# Register M4 Posture and Report routers under /, /api/v1 and /v1
+app.include_router(posture_router)
+app.include_router(posture_router, prefix="/api/v1")
+app.include_router(posture_router, prefix="/v1")
+
+app.include_router(reports_router, prefix="/api")
 
 

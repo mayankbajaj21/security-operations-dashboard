@@ -62,13 +62,18 @@ def get_metrics() -> dict:
         status_items = results.get("by_status", [])
         status_counts = {str(item["_id"]).lower(): item["count"] for item in status_items if item.get("_id")}
         
+        # Calculate affected assets (monitored assets with active telemetry)
+        distinct_assets = [a for a in collection.distinct("asset_name") if a]
+        affected_assets_count = len(distinct_assets)
+        
         return {
             "overview": {
                 "total_events": total_events,
                 "critical_events": severity_counts.get("Critical", 0),
                 "high_events": severity_counts.get("High", 0),
                 "medium_events": severity_counts.get("Medium", 0),
-                "low_events": severity_counts.get("Low", 0)
+                "low_events": severity_counts.get("Low", 0),
+                "affected_assets": affected_assets_count
             },
             "event_status": {
                 "success": status_counts.get("success", 0),

@@ -89,10 +89,18 @@ export const getMetrics = async (options = {}) => {
 };
 
 /**
- * GET /events/trend - Computes hourly time-series event activity
+ * GET /events/trend - Computes hourly time-series event activity and M3 risk trend
  */
-export const getEventTrend = async (options = {}) => {
-  return fetchWithCache('/events/trend', {}, options);
+export const getEventTrend = async (rangeOrOptions = '7d', options = {}) => {
+  let range = '7d';
+  let opts = options;
+  if (typeof rangeOrOptions === 'string') {
+    range = rangeOrOptions;
+  } else if (rangeOrOptions && typeof rangeOrOptions === 'object') {
+    opts = rangeOrOptions;
+    range = opts.range || '7d';
+  }
+  return fetchWithCache('/events/trend', { range }, opts);
 };
 
 /**
@@ -221,6 +229,17 @@ export const getIncidents = async (params = {}, options = {}) => {
 };
 
 /**
+ * GET /v1/incidents/summary - Macro incident statistics (active, high-risk, by-status, by-risk-level)
+ */
+export const getIncidentsSummary = async (options = {}) => {
+  if (options.noCache) {
+    const response = await apiClient.get('/v1/incidents/summary');
+    return response.data;
+  }
+  return fetchWithCache('/v1/incidents/summary', {}, options);
+};
+
+/**
  * GET /v1/incidents/{incident_id} - Retrieves a single security incident record
  */
 export const getIncident = async (incidentId, options = {}) => {
@@ -260,6 +279,54 @@ export const getAttackChains = async (params = {}, options = {}) => {
     return response.data;
   }
   return fetchWithCache('/v1/attack-chains', params, options);
+};
+
+/**
+ * Milestone 4 — Task 5: GET /v1/incidents/{incident_id}/attack-chain
+ * Retrieves dynamic multi-stage attack chain and stages for an incident
+ */
+export const getIncidentAttackChain = async (incidentId, options = {}) => {
+  if (options.noCache) {
+    const response = await apiClient.get(`/v1/incidents/${incidentId}/attack-chain`);
+    return response.data;
+  }
+  return fetchWithCache(`/v1/incidents/${incidentId}/attack-chain`, {}, options);
+};
+
+/**
+ * Milestone 4 — Task 6: GET /mitre/techniques
+ * Retrieves MITRE technique analysis records (Technique, Name, Events, Risk)
+ */
+export const getMitreTechniques = async (options = {}) => {
+  if (options.noCache) {
+    const response = await apiClient.get('/mitre/techniques');
+    return response.data;
+  }
+  return fetchWithCache('/mitre/techniques', {}, options);
+};
+
+/**
+ * Milestone 4 — Task 7: GET /v1/vulnerabilities
+ * Retrieves authoritative CVE vulnerability intelligence (CVE, Asset, CVSS, Severity, Status)
+ */
+export const getVulnerabilities = async (params = {}, options = {}) => {
+  if (options.noCache) {
+    const response = await apiClient.get('/v1/vulnerabilities', { params });
+    return response.data;
+  }
+  return fetchWithCache('/v1/vulnerabilities', params, options);
+};
+
+/**
+ * Milestone 4 — Task 8: GET /threat-intel/iocs
+ * Retrieves authoritative IOC intelligence indicators (IOC, Type, Status, Threat Count, Affected Assets, First Seen, Last Seen)
+ */
+export const getThreatIntelIocs = async (params = {}, options = {}) => {
+  if (options.noCache) {
+    const response = await apiClient.get('/threat-intel/iocs', { params });
+    return response.data;
+  }
+  return fetchWithCache('/threat-intel/iocs', params, options);
 };
 
 /* ==========================================================================
@@ -344,6 +411,114 @@ export const registerUser = async (payload) => {
 export const getCurrentAuthUser = async () => {
   const response = await apiClient.get('/v1/auth/me');
   return response.data;
+};
+
+/* ==========================================================================
+ * Milestone 4 — Tasks 9, 11, 13 APIs
+ * ========================================================================== */
+
+/**
+ * GET /v1/incidents/filters - Retrieves dynamic filter options for all 10 M4 filters
+ */
+export const getIncidentFilters = async () => {
+  const response = await apiClient.get('/v1/incidents/filters');
+  return response.data;
+};
+
+/**
+ * GET /v1/incidents/{id}/recommendations - Retrieves M3 recommendations for incident
+ */
+export const getIncidentRecommendations = async (incidentId) => {
+  const response = await apiClient.get(`/v1/incidents/${incidentId}/recommendations`);
+  return response.data;
+};
+
+/**
+ * POST /v1/predictions/{eventId}/feedback - Submits analyst feedback for a prediction
+ */
+export const submitPredictionFeedback = async (eventId, payload) => {
+  const response = await apiClient.post(`/v1/predictions/${eventId}/feedback`, payload);
+  clearApiCache();
+  return response.data;
+};
+
+/**
+ * GET /v1/predictions/{eventId}/feedback - Retrieves analyst feedback for an event
+ */
+export const getPredictionFeedback = async (eventId) => {
+  const response = await apiClient.get(`/v1/predictions/${eventId}/feedback`);
+  return response.data;
+};
+
+/**
+ * GET /v1/attack-chains/{id} - Retrieves attack chain by chain or incident ID
+ */
+export const getAttackChainById = async (id) => {
+  const response = await apiClient.get(`/v1/attack-chains/${id}`);
+  return response.data;
+};
+
+/**
+ * Milestone 4 — Tasks 15, 16, 17: Security Posture, Executive Data & Report Download APIs
+ * ========================================================================== */
+
+/**
+ * Milestone 4 — Task 15: GET /posture
+ * Retrieves dynamic overall Security Posture Score (0-100), status band, and 5 contributing conditions
+ */
+export const getSecurityPosture = async (options = {}) => {
+  if (options.noCache) {
+    const response = await apiClient.get('/posture');
+    return response.data;
+  }
+  return fetchWithCache('/posture', {}, options);
+};
+
+/**
+ * Milestone 4 — Task 16: GET /reports/executive/data
+ * Retrieves authoritative aggregated executive metrics payload
+ */
+export const getExecutiveReportData = async (options = {}) => {
+  if (options.noCache) {
+    const response = await apiClient.get('/reports/executive/data');
+    return response.data;
+  }
+  return fetchWithCache('/reports/executive/data', {}, options);
+};
+
+/**
+ * Milestone 4 — Task 17: GET /reports/executive?format=pdf|csv
+ * Downloads generated executive security report as a Blob file
+ */
+export const downloadSecurityReport = async (format = 'pdf') => {
+  const response = await apiClient.get('/reports/executive', {
+    params: { format, _t: Date.now() },
+    responseType: 'blob'
+  });
+  
+  let filename = `security_operations_executive_report.${format}`;
+  const disposition = response.headers['content-disposition'];
+  if (disposition && disposition.indexOf('filename=') !== -1) {
+    const matches = /filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/.exec(disposition);
+    if (matches != null && matches[1]) {
+      filename = matches[1].replace(/['"]/g, '');
+    }
+  }
+
+  if (typeof window !== 'undefined' && window.URL && window.document) {
+    const blob = new Blob([response.data], {
+      type: format === 'csv' ? 'text/csv' : 'application/pdf'
+    });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(url);
+  }
+  return { success: true, filename };
 };
 
 export default apiClient;

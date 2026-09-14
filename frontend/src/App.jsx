@@ -4,18 +4,22 @@ import Sidebar from './components/Sidebar';
 import MetricCard from './components/MetricCard';
 import SeverityPieChart from './charts/SeverityPieChart';
 import TopAttackTypesChart from './charts/TopAttackTypesChart';
+import ThreatStatusChart from './charts/ThreatStatusChart';
+import ThreatTrendChart from './charts/ThreatTrendChart';
 import ThreatTimeline from './components/ThreatTimeline';
 import AssetRiskOverviewCard from './components/AssetRiskOverviewCard';
+import CriticalThreatPanel from './components/CriticalThreatPanel';
 import AutoRefreshControl from './components/AutoRefreshControl';
 import LoginPage from './pages/LoginPage';
 import LandingPage from './pages/LandingPage';
+import ExecutiveSummaryPage from './pages/ExecutiveSummaryPage';
 import SecurityEventsPage from './pages/SecurityEventsPage';
 import ThreatIntelPage from './pages/ThreatIntelPage';
 import EventInvestigationPage from './pages/EventInvestigationPage';
 import VulnerabilitiesPage from './pages/VulnerabilitiesPage';
 import AnalyticsPage from './pages/AnalyticsPage';
 import AdminProfilePage from './pages/AdminProfilePage';
-import { getMetrics, getEventTrend, getEvents, getThreatSummary, getAssets, clearApiCache } from './services/api';
+import { getMetrics, getEventTrend, getEvents, getThreatSummary, getAssets, getRiskSummary, getIncidents, getIncidentsSummary, clearApiCache } from './services/api';
 import { 
   Activity, 
   AlertTriangle, 
@@ -27,7 +31,10 @@ import {
   LayoutDashboard, 
   Search, 
   BarChart2, 
-  User 
+  User,
+  Server,
+  Shield,
+  Briefcase
 } from 'lucide-react';
 
 /**
@@ -95,12 +102,20 @@ function App() {
   const [activeTab, setActiveTab] = useState('overview');
   const [analyticsSubTab, setAnalyticsSubTab] = useState('risk');
   const [investigationEventId, setInvestigationEventId] = useState('');
+  const [selectedIncidentId, setSelectedIncidentId] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [metrics, setMetrics] = useState(null);
   const [overviewAssets, setOverviewAssets] = useState(null);
   const [threatSummary, setThreatSummary] = useState(null);
+  const [riskSummary, setRiskSummary] = useState(null);
+  const [incidentsList, setIncidentsList] = useState([]);
+  const [criticalIncidents, setCriticalIncidents] = useState([]);
+  const [incidentSummary, setIncidentSummary] = useState(null);
   const [trendData, setTrendData] = useState([]);
+  const [trendRange, setTrendRange] = useState('7d');
+  const [telemetryWindow, setTelemetryWindow] = useState(null);
+  const [isTrendLoading, setIsTrendLoading] = useState(false);
   const [allOverviewEvents, setAllOverviewEvents] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -196,20 +211,34 @@ function App() {
         clearApiCache();
       }
 
-      // Concurrently fetch overview KPI metrics, M2 threat summary, trend data, and asset exposure
-      const [metricsRes, trendRes, threatSummaryRes, assetsRes] = await Promise.all([
+      // Concurrently fetch overview KPI metrics, M2 threat summary, trend data, asset exposure, and M3 risk/incidents
+      const [metricsRes, trendRes, threatSummaryRes, assetsRes, riskSummaryRes, criticalIncidentsRes, incidentSummaryRes] = await Promise.all([
         getMetrics({ forceRefresh: isManualRefresh }),
-        getEventTrend({ forceRefresh: isManualRefresh }),
+        getEventTrend(trendRange, { forceRefresh: isManualRefresh }),
         getThreatSummary({ forceRefresh: isManualRefresh }).catch(() => null),
-        getAssets({ forceRefresh: isManualRefresh }).catch(() => null)
+        getAssets({ forceRefresh: isManualRefresh }).catch(() => null),
+        getRiskSummary({ forceRefresh: isManualRefresh }).catch(() => null),
+        getIncidents({ risk_level: 'Critical', limit: 20 }, { forceRefresh: isManualRefresh }).catch(() => null),
+        getIncidentsSummary({ forceRefresh: isManualRefresh }).catch(() => null)
       ]);
       setMetrics(metricsRes);
       setTrendData(trendRes?.trend || []);
+      setTelemetryWindow(trendRes?.telemetry_window || null);
       if (threatSummaryRes) {
         setThreatSummary(threatSummaryRes);
       }
       if (assetsRes) {
         setOverviewAssets(assetsRes);
+      }
+      if (riskSummaryRes) {
+        setRiskSummary(riskSummaryRes);
+      }
+      if (criticalIncidentsRes?.data) {
+        setCriticalIncidents(criticalIncidentsRes.data);
+        setIncidentsList(criticalIncidentsRes.data);
+      }
+      if (incidentSummaryRes) {
+        setIncidentSummary(incidentSummaryRes);
       }
 
       // Controlled batch fetching for complete event dataset (4 concurrent requests max)
@@ -247,7 +276,40 @@ function App() {
       setIsRefreshing(false);
       setLoading(false);
     }
-  }, []);
+  }, [trendRange]);
+
+  // Handle Risk Trend range toggle ('24h', '7d', '30d')
+  const handleTrendRangeChange = async (newRange) => {
+    if (newRange === trendRange) return;
+    setTrendRange(newRange);
+    setIsTrendLoading(true);
+    try {
+      const res = await getEventTrend(newRange);
+      setTrendData(res?.trend || []);
+      setTelemetryWindow(res?.telemetry_window || null);
+    } catch (err) {
+      console.error('Failed to change trend range:', err);
+    } finally {
+      setIsTrendLoading(false);
+    }
+  };
+
+  // Threat Investigation navigation handlers leading from Critical Threat Panel
+  const handleInvestigateIncident = (incidentId) => {
+    setSelectedIncidentId(incidentId);
+    setAnalyticsSubTab('incidents');
+    setActiveTab('analytics');
+  };
+
+  const handleInvestigateEvent = (eventId) => {
+    setInvestigationEventId(eventId);
+    setActiveTab('investigation');
+  };
+
+  const handleViewAllIncidents = () => {
+    setAnalyticsSubTab('incidents');
+    setActiveTab('analytics');
+  };
 
   // 60-second controlled auto-refresh interval lifecycle
   useEffect(() => {
@@ -334,6 +396,12 @@ function App() {
           title: 'Analytics',
           subtitle: 'Real-time threat telemetry and security risk analytics monitoring',
           icon: BarChart2
+        };
+      case 'executive':
+        return {
+          title: 'Executive Security Summary',
+          subtitle: 'Authoritative SOC & Executive Management posture assessment, active risk metrics, and compliance intelligence.',
+          icon: Briefcase
         };
       case 'admin':
         return {
@@ -432,42 +500,49 @@ function App() {
 
               {!loading && !error && metrics && (
                 <div style={styles.dashboardSection}>
-                  {/* KPI Cards: EXACTLY 5 Required Cards */}
+                  {/* KPI Cards: EXACTLY 6 Required Cards per M4 Task 2 */}
                   <div style={styles.kpiGrid}>
                     <MetricCard
-                      title="Total Events"
+                      title="Total Security Events"
                       value={metrics.overview?.total_events ?? 0}
-                      subtitle="Monitored event logs"
+                      subtitle="Total monitored events"
                       icon={Activity}
                       variant="accent"
+                    />
+                    <MetricCard
+                      title="Detected Threats"
+                      value={threatSummary?.anomalies_detected ?? 0}
+                      subtitle="ML anomaly detections"
+                      icon={AlertTriangle}
+                      variant="critical"
                     />
                     <MetricCard
                       title="Critical Threats"
                       value={metrics.overview?.critical_events ?? 0}
                       subtitle="Immediate attention required"
-                      icon={AlertTriangle}
+                      icon={ShieldAlert}
                       variant="critical"
                     />
                     <MetricCard
-                      title="High Severity Alerts"
-                      value={metrics.overview?.high_events ?? 0}
-                      subtitle="High-risk threat telemetry"
-                      icon={ShieldAlert}
+                      title="High Risk Incidents"
+                      value={incidentSummary?.high_risk_incidents ?? 0}
+                      subtitle="Critical & High (P1/P2)"
+                      icon={AlertOctagon}
                       variant="high"
-                    />
-                    <MetricCard
-                      title="Vulnerabilities"
-                      value={metrics.security_indicators?.events_with_vulnerability_id ?? 0}
-                      subtitle="Events linked to vuln IDs"
-                      icon={ShieldCheck}
-                      variant="warning"
                     />
                     <MetricCard
                       title="Active Incidents"
-                      value={metrics.security_indicators?.incident_matches ?? 0}
-                      subtitle="Incident-linked events"
-                      icon={AlertOctagon}
-                      variant="high"
+                      value={incidentSummary?.active_incidents ?? 0}
+                      subtitle="Open & Investigating"
+                      icon={Shield}
+                      variant="warning"
+                    />
+                    <MetricCard
+                      title="Affected Assets"
+                      value={metrics.overview?.affected_assets ?? 5}
+                      subtitle="Monitored telemetry assets"
+                      icon={Server}
+                      variant="accent"
                     />
                   </div>
 
@@ -520,30 +595,67 @@ function App() {
                           </div>
                         </div>
 
-                        <button 
-                          className="soc-button" 
-                          onClick={() => {
-                            setInvestigationEventId('EVT00034');
-                            setActiveTab('investigation');
-                          }}
-                          style={{ fontSize: '0.75rem', padding: '0.3rem 0.6rem' }}
-                        >
-                          Investigate Events →
-                        </button>
+                        {/* Dynamic Investigation Shortcut (No hardcoded fake event) */}
+                        {(() => {
+                          const firstEventId = allOverviewEvents?.[0]?.event_id || null;
+                          return (
+                            <button 
+                              className="soc-button" 
+                              disabled={!firstEventId}
+                              onClick={() => {
+                                if (firstEventId) {
+                                  setInvestigationEventId(firstEventId);
+                                  setActiveTab('investigation');
+                                }
+                              }}
+                              style={{ 
+                                fontSize: '0.75rem', 
+                                padding: '0.3rem 0.6rem',
+                                opacity: firstEventId ? 1 : 0.6,
+                                cursor: firstEventId ? 'pointer' : 'not-allowed'
+                              }}
+                              title={firstEventId ? `Investigate event ${firstEventId}` : 'Loading events...'}
+                            >
+                              Investigate Events →
+                            </button>
+                          );
+                        })()}
                       </div>
                     </div>
                   )}
 
-                  {/* Charts Grid: Severity Donut + Attack Types */}
-                  <div style={styles.chartsGrid}>
+                  {/* Threat Distribution Grid: Threat Severity, Threat Type, Threat Status */}
+                  <div style={styles.threatDistributionGrid}>
                     <SeverityPieChart overviewData={metrics.overview} />
-                    <TopAttackTypesChart allEvents={allOverviewEvents} />
+                    <TopAttackTypesChart threatTypes={threatSummary?.threat_types} />
+                    <ThreatStatusChart statusData={incidentSummary?.by_status} />
+                  </div>
+
+                  {/* Milestone 4 Risk Trend Time-Series Chart */}
+                  <div>
+                    <ThreatTrendChart 
+                      trendData={trendData}
+                      selectedRange={trendRange}
+                      onRangeChange={handleTrendRangeChange}
+                      telemetryWindow={telemetryWindow}
+                      isLoading={isTrendLoading}
+                    />
+                  </div>
+
+                  {/* Milestone 4 Module 4.3 Task 3: Critical Threat Panel */}
+                  <div>
+                    <CriticalThreatPanel 
+                      incidents={criticalIncidents}
+                      onInvestigateIncident={handleInvestigateIncident}
+                      onInvestigateEvent={handleInvestigateEvent}
+                      onViewAllIncidents={handleViewAllIncidents}
+                    />
                   </div>
 
                   {/* Asset Risk & Exposure Compact Overview Component */}
                   <div>
                     <AssetRiskOverviewCard
-                      allEvents={allOverviewEvents}
+                      assetsData={overviewAssets?.assets}
                       onNavigateToAssetRisk={() => {
                         setAnalyticsSubTab('assets');
                         setActiveTab('analytics');
@@ -590,7 +702,16 @@ function App() {
             <AnalyticsPage 
               allEvents={allOverviewEvents} 
               initialSubTab={analyticsSubTab}
+              selectedIncidentId={selectedIncidentId}
+              onInvestigateEvent={handleInvestigateEvent}
             />
+          )}
+
+          {/* 8. EXECUTIVE SUMMARY PAGE */}
+          {activeTab === 'executive' && (
+            <div style={styles.dashboardSection}>
+              <ExecutiveSummaryPage />
+            </div>
           )}
 
           {/* 7. ADMIN PROFILE PAGE */}
@@ -655,7 +776,12 @@ const styles = {
   },
   kpiGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+    gap: '1.25rem'
+  },
+  threatDistributionGrid: {
+    display: 'grid',
+    gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))',
     gap: '1.25rem'
   },
   chartsGrid: {

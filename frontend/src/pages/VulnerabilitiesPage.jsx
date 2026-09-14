@@ -646,9 +646,9 @@ const VulnerabilitiesPage = () => {
                 <table className="soc-table">
                   <thead>
                     <tr>
-                      <th>CVE ID</th>
+                      <th>CVE</th>
                       <th>Vulnerability Name</th>
-                      <th>Target Asset</th>
+                      <th>Asset</th>
                       <th>Severity</th>
                       <th>CVSS</th>
                       <th>Patch Available</th>

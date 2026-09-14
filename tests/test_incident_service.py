@@ -83,8 +83,8 @@ class TestIncidentService(unittest.TestCase):
         self.assertEqual(incident.ioc_status, "Malicious")
         self.assertEqual(incident.status, IncidentStatus.OPEN.value)
 
-        # Assert priority is preserved as None (per explicit specification rule)
-        self.assertIsNone(incident.priority)
+        # Assert priority is derived from risk level (Critical -> P1) per M4 contract
+        self.assertEqual(incident.priority, "P1")
 
         # Assert recommendations were attached
         self.assertIsInstance(incident.recommendations, list)

@@ -9,7 +9,8 @@ import {
   ChevronLeft,
   ChevronRight,
   User,
-  X
+  X,
+  Briefcase
 } from 'lucide-react';
 
 /**
@@ -34,7 +35,8 @@ const Sidebar = ({
     { id: 'threat-intel', label: 'Threat Intelligence', icon: Radar },
     { id: 'investigation', label: 'Event Investigation', icon: Search },
     { id: 'vulnerabilities', label: 'Vulnerabilities', icon: ShieldAlert },
-    { id: 'analytics', label: 'Analytics', icon: BarChart2 }
+    { id: 'analytics', label: 'Analytics', icon: BarChart2 },
+    { id: 'executive', label: 'Executive Brief', icon: Briefcase },
   ];
 
   return (

@@ -44,10 +44,18 @@ def list_attack_chains(
         events_coll = db["security_events"]
         pred_coll = db["threat_predictions"]
 
-        pred_cursor = pred_coll.find({}, {"_id": 0})
+        # Project only the fields the correlation engine and combined-event builder consume
+        _PRED_PROJ = {"_id": 0, "event_id": 1, "prediction": 1, "confidence_score": 1, "threat_type": 1}
+        pred_cursor = pred_coll.find({}, _PRED_PROJ)
         pred_map = {p["event_id"]: p for p in pred_cursor if "event_id" in p}
 
-        events_cursor = events_coll.find({}, {"_id": 0})
+        _EVT_PROJ = {
+            "_id": 0, "event_id": 1, "timestamp": 1, "event_type": 1,
+            "event_severity": 1, "username": 1, "source_ip": 1,
+            "destination_ip": 1, "asset_name": 1, "mitre_id": 1,
+            "threat_intel_match": 1, "failed_login_attempts": 1
+        }
+        events_cursor = events_coll.find({}, _EVT_PROJ)
         combined_events = []
 
         for evt in events_cursor:
@@ -117,4 +125,25 @@ def list_attack_chains(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to execute attack chain correlation: {str(e)}"
         )
+
+
+@router.get("/{chain_or_incident_id}", status_code=status.HTTP_200_OK)
+def get_attack_chain_by_id(chain_or_incident_id: str) -> dict:
+    """
+    Milestone 4 — Task 5: Retrieves attack chain for given incident or chain ID.
+    Reuses authoritative incident-to-event relationships.
+    """
+    from backend.app.api.incidents import get_incident_attack_chain
+    try:
+        return get_incident_attack_chain(chain_or_incident_id)
+    except HTTPException:
+        db = get_database()
+        inc = db["incidents"].find_one({"attack_chain_id": chain_or_incident_id})
+        if inc and inc.get("incident_id"):
+            return get_incident_attack_chain(inc["incident_id"])
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Attack chain or incident with ID '{chain_or_incident_id}' not found."
+        )
+
 

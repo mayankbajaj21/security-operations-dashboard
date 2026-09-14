@@ -2,24 +2,24 @@ import React from 'react';
 import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from 'recharts';
 
 /**
- * Security Event Severity Distribution Donut Chart
- * @param {Object} overviewData - metrics.overview object ({ critical_events, high_events, medium_events, low_events })
+ * M3 Incident Lifecycle Threat Status Distribution Donut Chart
+ * @param {Object} statusData - Object with counts: { Open, Investigating, Resolved, 'False Positive' }
  */
-const SeverityPieChart = ({ overviewData }) => {
-  if (!overviewData) {
+const ThreatStatusChart = ({ statusData }) => {
+  if (!statusData) {
     return (
       <div className="panel" style={styles.chartPanel}>
-        <h3 className="section-title">Threat Severity</h3>
-        <p className="muted" style={styles.emptyText}>Loading threat severity distribution...</p>
+        <h3 className="section-title">Threat Status</h3>
+        <p className="muted" style={styles.emptyText}>Loading threat status distribution...</p>
       </div>
     );
   }
 
   const chartData = [
-    { name: 'Critical', value: overviewData.critical_events || 0, color: '#f43f5e' },
-    { name: 'High', value: overviewData.high_events || 0, color: '#fb923c' },
-    { name: 'Medium', value: overviewData.medium_events || 0, color: '#facc15' },
-    { name: 'Low', value: overviewData.low_events || 0, color: '#38bdf8' }
+    { name: 'Open', value: statusData.Open || 0, color: '#f59e0b' },
+    { name: 'Investigating', value: statusData.Investigating || 0, color: '#3b82f6' },
+    { name: 'Resolved', value: statusData.Resolved || 0, color: '#10b981' },
+    { name: 'False Positive', value: statusData['False Positive'] || 0, color: '#64748b' }
   ];
 
   const totalValue = chartData.reduce((acc, curr) => acc + curr.value, 0);
@@ -31,10 +31,10 @@ const SeverityPieChart = ({ overviewData }) => {
       return (
         <div style={styles.tooltipContainer}>
           <div style={{ color: data.payload.color, fontWeight: '700' }}>
-            {data.name} Severity
+            {data.name}
           </div>
           <div style={styles.tooltipValue}>
-            {data.value.toLocaleString()} events ({pct}%)
+            {data.value.toLocaleString()} incidents ({pct}%)
           </div>
         </div>
       );
@@ -45,15 +45,20 @@ const SeverityPieChart = ({ overviewData }) => {
   return (
     <div className="panel" style={styles.chartPanel}>
       <div>
-        <h3 className="section-title">Threat Severity</h3>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <h3 className="section-title">Threat Status</h3>
+          <span className="badge status-open" style={{ fontSize: '0.68rem' }}>
+            M3 Lifecycle
+          </span>
+        </div>
         <p className="muted" style={{ fontSize: '0.75rem', margin: '0.15rem 0 0 0' }}>
-          Severity breakdown across security events
+          Incident lifecycle resolution status
         </p>
       </div>
 
       {totalValue === 0 ? (
         <div style={styles.emptyText}>
-          <p className="muted" style={{ fontSize: '0.8rem' }}>No severity data available.</p>
+          <p className="muted" style={{ fontSize: '0.8rem' }}>No incident status data available.</p>
         </div>
       ) : (
         <div style={styles.chartWrapper}>
@@ -71,7 +76,7 @@ const SeverityPieChart = ({ overviewData }) => {
                 strokeWidth={2}
               >
                 {chartData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.color} />
+                  <Cell key={`status-cell-${index}`} fill={entry.color} />
                 ))}
               </Pie>
               <Tooltip content={<CustomTooltip />} />
@@ -100,8 +105,8 @@ const styles = {
   },
   chartWrapper: {
     width: '100%',
-    height: '235px',
-    minHeight: '235px',
+    height: '240px',
+    minHeight: '240px',
     position: 'relative'
   },
   emptyText: {
@@ -116,14 +121,14 @@ const styles = {
     border: '1px solid var(--border-subtle)',
     borderRadius: '4px',
     padding: '0.5rem 0.75rem',
-    boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
     fontSize: '0.75rem',
-    fontFamily: 'var(--font-mono)'
+    boxShadow: 'var(--shadow-md)'
   },
   tooltipValue: {
+    fontFamily: 'var(--font-mono)',
     color: 'var(--text-primary)',
-    marginTop: '0.25rem'
+    marginTop: '0.2rem'
   }
 };
 
-export default SeverityPieChart;
+export default ThreatStatusChart;

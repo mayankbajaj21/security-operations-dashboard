@@ -27,7 +27,7 @@ import {
  * 6. AI Threat Detection & Model Diagnostics (M2 Isolation Forest)
  * 7. Asset Risk Exposure (M1/M2 asset telemetry)
  */
-const AnalyticsPage = ({ allEvents = null, initialSubTab = 'risk' }) => {
+const AnalyticsPage = ({ allEvents = null, initialSubTab = 'risk', selectedIncidentId = null, initialIncidentId = null, onInvestigateEvent = null }) => {
   const [activeSubTab, setActiveSubTab] = useState(initialSubTab);
 
   useEffect(() => {
@@ -75,9 +75,9 @@ const AnalyticsPage = ({ allEvents = null, initialSubTab = 'risk' }) => {
       {/* Sub-Tab Page Content */}
       <div style={styles.subContent}>
         {activeSubTab === 'risk' && <RiskPrioritizationPage />}
-        {activeSubTab === 'incidents' && <IncidentResponsePage />}
+        {activeSubTab === 'incidents' && <IncidentResponsePage initialIncidentId={initialIncidentId || selectedIncidentId} onInvestigateEvent={onInvestigateEvent} />}
         {activeSubTab === 'attack-chain' && <AttackChainPage />}
-        {activeSubTab === 'security-intel' && <SecurityIntelligencePage />}
+        {activeSubTab === 'security-intel' && <SecurityIntelligencePage onInvestigateEvent={onInvestigateEvent} />}
         {activeSubTab === 'mitre' && <MitreCoveragePage />}
         {activeSubTab === 'ai-detection' && <AiThreatDetectionPage />}
         {activeSubTab === 'assets' && <AssetRiskPage allEvents={allEvents} />}

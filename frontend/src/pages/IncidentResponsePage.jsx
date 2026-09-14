@@ -5,7 +5,10 @@ import {
   updateIncidentStatus, 
   getRecommendations,
   submitIncidentFeedback,
-  getRiskComparison
+  submitPredictionFeedback,
+  getRiskComparison,
+  getIncidentAttackChain,
+  getIncidentFilters
 } from '../services/api';
 import MetricCard from '../components/MetricCard';
 import Badge from '../components/Badge';
@@ -31,7 +34,13 @@ import {
   User,
   Layers,
   HelpCircle,
-  ArrowLeft
+  ArrowLeft,
+  GitCommit,
+  ExternalLink,
+  Info,
+  Filter,
+  RotateCcw,
+  Calendar
 } from 'lucide-react';
 
 /**
@@ -44,7 +53,7 @@ import {
  * 2. Incident Investigation Workspace: Deep-dive view for a clicked/selected incident_id
  *    consuming GET /api/v1/incidents/{incident_id} and GET /api/v1/recommendations/{incident_id}
  */
-const IncidentResponsePage = ({ initialIncidentId = null }) => {
+const IncidentResponsePage = ({ initialIncidentId = null, onInvestigateEvent = null }) => {
   // Incidents Data State
   const [incidentsList, setIncidentsList] = useState([]);
   const [page, setPage] = useState(1);
@@ -52,13 +61,20 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  // Filters State
-  const [statusFilter, setStatusFilter] = useState('');
+  // Milestone 4 — Task 9: EXACT 10 FILTERS STATE
+  const [severityFilter, setSeverityFilter] = useState('');
   const [riskLevelFilter, setRiskLevelFilter] = useState('');
   const [threatTypeFilter, setThreatTypeFilter] = useState('');
   const [assetFilter, setAssetFilter] = useState('');
+  const [departmentFilter, setDepartmentFilter] = useState('');
   const [mitreFilter, setMitreFilter] = useState('');
+  const [cveFilter, setCveFilter] = useState('');
+  const [iocStatusFilter, setIocStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [startDateFilter, setStartDateFilter] = useState('');
+  const [endDateFilter, setEndDateFilter] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [filterOptions, setFilterOptions] = useState(null);
 
   // Selected Incident for Full Investigation Workspace (GET /api/v1/incidents/{incident_id})
   const [selectedIncidentId, setSelectedIncidentId] = useState(null);
@@ -84,15 +100,24 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
   // Contextual Risk Score Comparison State (GET /api/v1/risk/comparison/{event_id})
   const [incidentComparison, setIncidentComparison] = useState(null);
 
-  // Fetch All Incidents from GET /api/v1/incidents
+  // Milestone 4 — Task 5: Attack Chain State
+  const [attackChainData, setAttackChainData] = useState(null);
+  const [selectedStage, setSelectedStage] = useState(null);
+
+  // Fetch All Incidents from GET /api/v1/incidents and dynamic filter choices
   const fetchIncidentsData = useCallback(async (isManual = false) => {
     setLoading(true);
     setError(null);
     try {
-      // Fetch full incident dataset so filtering and KPI metrics reflect the global incident state
-      const res = await getIncidents({ limit: 100 }, { noCache: isManual });
+      const [res, filterRes] = await Promise.all([
+        getIncidents({ limit: 100 }, { noCache: isManual }),
+        getIncidentFilters().catch(() => null)
+      ]);
       const rawData = res?.data || [];
       setIncidentsList(rawData);
+      if (filterRes) {
+        setFilterOptions(filterRes);
+      }
     } catch (err) {
       console.error('Failed to query incidents from API:', err);
       setError('Unable to load priority incident records from the backend.');
@@ -106,7 +131,7 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
     fetchIncidentsData();
   }, [fetchIncidentsData]);
 
-  // Load single incident details + recommendations when an incident is clicked/selected
+  // Load single incident details + recommendations + attack chain when an incident is clicked/selected
   const loadIncidentDetail = useCallback(async (incidentId) => {
     const cleanId = (typeof incidentId === 'string' ? incidentId : '').trim();
     if (!cleanId) {
@@ -121,6 +146,8 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
     setIncidentDetail(null);
     setRecommendationsData(null);
     setIncidentComparison(null);
+    setAttackChainData(null);
+    setSelectedStage(null);
     setAssigneeInput('');
     setNotesInput('');
     setFeedbackLabel('');
@@ -133,9 +160,10 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
     setStatusUpdateSuccess(null);
 
     try {
-      const [incRes, recsRes] = await Promise.all([
+      const [incRes, recsRes, chainRes] = await Promise.all([
         getIncident(cleanId, { noCache: true }),
-        getRecommendations(cleanId, { noCache: true }).catch(() => null)
+        getRecommendations(cleanId, { noCache: true }).catch(() => null),
+        getIncidentAttackChain(cleanId, { noCache: true }).catch(() => null)
       ]);
 
       if (!incRes || !incRes.incident_id) {
@@ -144,6 +172,7 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
 
       setIncidentDetail(incRes);
       setRecommendationsData(recsRes);
+      setAttackChainData(chainRes);
       setAssigneeInput(incRes.assigned_to || incRes.assignee || '');
       setNotesInput(incRes.notes || incRes.investigation_notes || '');
 
@@ -185,6 +214,8 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
     setIncidentDetail(null);
     setRecommendationsData(null);
     setIncidentComparison(null);
+    setAttackChainData(null);
+    setSelectedStage(null);
     setAssigneeInput('');
     setNotesInput('');
     setFeedbackLabel('');
@@ -209,17 +240,41 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
     setFeedbackSuccess(null);
 
     try {
+      // Resolve authentic analyst identity from current authenticated user session if present
+      let authenticatedAnalyst = null;
+      try {
+        const rawUser = localStorage.getItem('soc_analyst_user') || sessionStorage.getItem('soc_analyst_user');
+        if (rawUser) {
+          const parsed = JSON.parse(rawUser);
+          authenticatedAnalyst = (parsed.full_name || parsed.name || parsed.email || '').trim() || null;
+        }
+      } catch (e) {}
+
+      const analystName = authenticatedAnalyst || assigneeInput.trim() || incidentDetail.assigned_to || 'SOC Analyst';
       const payload = {
         label: targetLabel,
         comment: feedbackComment ? feedbackComment.trim() : null,
-        analyst: assigneeInput.trim() || incidentDetail.assigned_to || 'SOC Analyst'
+        analyst: analystName
       };
 
       const updated = await submitIncidentFeedback(selectedIncidentId, payload);
+      
+      // Also persist to MongoDB analyst_feedback collection for the correlated event (Task 13)
+      const primaryEvt = incidentDetail.related_events?.[0] || incidentDetail.event_ids?.[0];
+      if (primaryEvt) {
+        submitPredictionFeedback(primaryEvt, {
+          event_id: primaryEvt,
+          actual_feedback: targetLabel,
+          prediction: incidentDetail.threat_type || 'Suspicious',
+          analyst: analystName,
+          comment: feedbackComment ? feedbackComment.trim() : null
+        }).catch(() => null);
+      }
+
       setIncidentDetail(updated);
       setFeedbackLabel(updated.feedback?.label || targetLabel);
       setFeedbackComment(updated.feedback?.comment || '');
-      setFeedbackSuccess(`Analyst feedback "${targetLabel}" recorded successfully.`);
+      setFeedbackSuccess(`Analyst feedback "${targetLabel}" recorded and persisted to database.`);
       fetchIncidentsData(true);
     } catch (err) {
       console.error('Failed to submit analyst feedback:', err);
@@ -288,32 +343,64 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
     }
   };
 
-  // 1. Filter ALL incidents by active filters and search query
+  // Milestone 4 — Task 9: Filter ALL incidents by the EXACT 10 filters + search query
   const filteredIncidents = useMemo(() => {
     return incidentsList.filter((inc) => {
-      // Status filter
-      if (statusFilter && (inc.status || '').toLowerCase() !== statusFilter.toLowerCase()) {
-        return false;
+      // 1. Severity filter
+      if (severityFilter && severityFilter !== 'All') {
+        const s = (inc.severity || inc.risk_level || '').toLowerCase();
+        if (s !== severityFilter.toLowerCase()) return false;
       }
-      // Risk level filter
-      if (riskLevelFilter && (inc.risk_level || '').toLowerCase() !== riskLevelFilter.toLowerCase()) {
-        return false;
+      // 2. Risk level filter
+      if (riskLevelFilter && riskLevelFilter !== 'All') {
+        if ((inc.risk_level || '').toLowerCase() !== riskLevelFilter.toLowerCase()) return false;
       }
-      // Threat type filter
-      if (threatTypeFilter && (inc.threat_type || '').toLowerCase() !== threatTypeFilter.toLowerCase()) {
-        return false;
+      // 3. Threat type filter
+      if (threatTypeFilter && threatTypeFilter !== 'All') {
+        if ((inc.threat_type || '').toLowerCase() !== threatTypeFilter.toLowerCase()) return false;
       }
-      // Asset filter
-      if (assetFilter.trim()) {
-        const aTarget = assetFilter.trim().toLowerCase();
+      // 4. Asset filter
+      if (assetFilter && assetFilter !== 'All') {
+        const aTarget = assetFilter.toLowerCase();
         const incAsset = (inc.affected_asset || inc.asset_name || inc.asset_id || '').toLowerCase();
         if (!incAsset.includes(aTarget)) return false;
       }
-      // MITRE technique filter
-      if (mitreFilter.trim()) {
-        const mTarget = mitreFilter.trim().toLowerCase();
+      // 5. Department filter
+      if (departmentFilter && departmentFilter !== 'All') {
+        const dTarget = departmentFilter.toLowerCase();
+        if (dTarget === 'unknown' || dTarget === 'n/a' || dTarget === 'none') {
+          if (inc.department && !['unknown', 'n/a', 'none'].includes(String(inc.department).toLowerCase())) {
+            return false;
+          }
+        } else {
+          if ((inc.department || '').toLowerCase() !== dTarget) return false;
+        }
+      }
+      // 6. MITRE technique filter
+      if (mitreFilter && mitreFilter !== 'All') {
+        const mTarget = mitreFilter.toLowerCase();
         const incMitre = (inc.mitre_techniques || inc.mitre_technique || []).map((t) => String(t).toLowerCase());
         if (!incMitre.some((t) => t.includes(mTarget))) return false;
+      }
+      // 7. CVE filter
+      if (cveFilter && cveFilter !== 'All') {
+        const cTarget = cveFilter.toLowerCase();
+        if (!(inc.cve_id || '').toLowerCase().includes(cTarget)) return false;
+      }
+      // 8. IOC Status filter
+      if (iocStatusFilter && iocStatusFilter !== 'All') {
+        if ((inc.ioc_status || '').toLowerCase() !== iocStatusFilter.toLowerCase()) return false;
+      }
+      // 9. Incident Status filter
+      if (statusFilter && statusFilter !== 'All') {
+        if ((inc.status || '').toLowerCase() !== statusFilter.toLowerCase()) return false;
+      }
+      // 10. Date Range filter
+      if (startDateFilter && inc.created_at) {
+        if (inc.created_at.slice(0, 10) < startDateFilter) return false;
+      }
+      if (endDateFilter && inc.created_at) {
+        if (inc.created_at.slice(0, 10) > endDateFilter) return false;
       }
       // Search query (Incident ID, Threat Type, Affected Asset, Affected User)
       if (searchQuery.trim()) {
@@ -331,7 +418,68 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
       }
       return true;
     });
-  }, [incidentsList, statusFilter, riskLevelFilter, threatTypeFilter, assetFilter, mitreFilter, searchQuery]);
+  }, [
+    incidentsList,
+    severityFilter,
+    riskLevelFilter,
+    threatTypeFilter,
+    assetFilter,
+    departmentFilter,
+    mitreFilter,
+    cveFilter,
+    iocStatusFilter,
+    statusFilter,
+    startDateFilter,
+    endDateFilter,
+    searchQuery
+  ]);
+
+  // Active filter count for badge indicator
+  const activeFilterCount = useMemo(() => {
+    let cnt = 0;
+    if (severityFilter && severityFilter !== 'All') cnt++;
+    if (riskLevelFilter && riskLevelFilter !== 'All') cnt++;
+    if (threatTypeFilter && threatTypeFilter !== 'All') cnt++;
+    if (assetFilter && assetFilter !== 'All') cnt++;
+    if (departmentFilter && departmentFilter !== 'All') cnt++;
+    if (mitreFilter && mitreFilter !== 'All') cnt++;
+    if (cveFilter && cveFilter !== 'All') cnt++;
+    if (iocStatusFilter && iocStatusFilter !== 'All') cnt++;
+    if (statusFilter && statusFilter !== 'All') cnt++;
+    if (startDateFilter || endDateFilter) cnt++;
+    if (searchQuery.trim()) cnt++;
+    return cnt;
+  }, [
+    severityFilter,
+    riskLevelFilter,
+    threatTypeFilter,
+    assetFilter,
+    departmentFilter,
+    mitreFilter,
+    cveFilter,
+    iocStatusFilter,
+    statusFilter,
+    startDateFilter,
+    endDateFilter,
+    searchQuery
+  ]);
+
+  // Reset all 10 filters
+  const handleResetAllFilters = () => {
+    setSeverityFilter('');
+    setRiskLevelFilter('');
+    setThreatTypeFilter('');
+    setAssetFilter('');
+    setDepartmentFilter('');
+    setMitreFilter('');
+    setCveFilter('');
+    setIocStatusFilter('');
+    setStatusFilter('');
+    setStartDateFilter('');
+    setEndDateFilter('');
+    setSearchQuery('');
+    setPage(1);
+  };
 
   // 2. Summary KPI Metrics CALCULATED FROM ENTIRE FILTERED SET (BEFORE PAGINATION)
   const totalCount = filteredIncidents.length;
@@ -440,27 +588,37 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
               </div>
             )}
 
-            {/* Core Incident Metadata Strips */}
+            {/* Task 4: Threat Investigation Core Details & Risk Factors */}
             <div style={styles.detailGridColumns}>
-              {/* Column 1: Core Triage Details */}
+              {/* Card 1: Incident Details (12 exact fields) */}
               <div style={styles.subCard}>
-                <h4 style={styles.subCardTitle}>
-                  <FileText size={15} color="var(--color-accent)" />
-                  <span>Incident Triage Context</span>
-                </h4>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <h4 style={styles.subCardTitle}>
+                    <FileText size={15} color="var(--color-accent)" />
+                    <span>Incident Details</span>
+                  </h4>
+                  <span className="badge status-detected" style={{ fontSize: '0.7rem' }}>
+                    12 Investigation Fields
+                  </span>
+                </div>
                 <div style={styles.detailsListGrid}>
+                  {/* 1. Incident ID */}
                   <div style={styles.detailItem}>
                     <span style={styles.detailLabel}>Incident ID:</span>
                     <span style={styles.detailValueMono}>
                       <strong style={{ color: 'var(--color-accent)' }}>{incidentDetail.incident_id}</strong>
                     </span>
                   </div>
+
+                  {/* 2. Threat Type */}
                   <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>Threat Category:</span>
+                    <span style={styles.detailLabel}>Threat Type:</span>
                     <span style={{ fontWeight: '700', color: 'var(--text-primary)' }}>
-                      {incidentDetail.threat_type || incidentDetail.threat_category || 'Unknown Threat'}
+                      {incidentDetail.threat_type || incidentDetail.threat_category || 'N/A'}
                     </span>
                   </div>
+
+                  {/* 3. Risk Score */}
                   <div style={styles.detailItem}>
                     <span style={styles.detailLabel}>Risk Score:</span>
                     <span style={{
@@ -469,95 +627,163 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
                       fontSize: '1rem',
                       color: incidentDetail.risk_score >= 81 ? 'var(--color-critical)' : incidentDetail.risk_score >= 61 ? 'var(--color-high)' : 'var(--color-accent)'
                     }}>
-                      {incidentDetail.risk_score} <span style={{ fontSize: '0.68rem', opacity: 0.7 }}>/ 100</span>
+                      {incidentDetail.risk_score !== undefined && incidentDetail.risk_score !== null ? incidentDetail.risk_score : 'N/A'}{' '}
+                      <span style={{ fontSize: '0.68rem', opacity: 0.7 }}>/ 100</span>
                     </span>
                   </div>
+
+                  {/* 4. Risk Level */}
                   <div style={styles.detailItem}>
                     <span style={styles.detailLabel}>Risk Level:</span>
-                    <Badge type="severity" value={incidentDetail.risk_level} />
+                    <Badge type="severity" value={incidentDetail.risk_level || 'N/A'} />
                   </div>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>Priority:</span>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: '700' }}>
-                      {incidentDetail.priority ? incidentDetail.priority : '—'}
-                    </span>
-                  </div>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>ML Confidence:</span>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: '700', color: 'var(--text-primary)' }}>
-                      {(incidentDetail.ml_confidence !== undefined && incidentDetail.ml_confidence !== null)
-                        ? `${incidentDetail.ml_confidence}%`
-                        : (incidentDetail.confidence_score !== undefined && incidentDetail.confidence_score !== null)
-                          ? `${incidentDetail.confidence_score}%`
-                          : '—'}
-                    </span>
-                  </div>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>IoC Intel Match:</span>
-                    <span className={`badge ${incidentDetail.ioc_status === 'Hit' || incidentDetail.ioc_status === true ? 'severity-critical' : 'status-success'}`}>
-                      {incidentDetail.ioc_status === 'Hit' || incidentDetail.ioc_status === true ? 'Hit' : incidentDetail.ioc_status || 'Clean / None'}
-                    </span>
-                  </div>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>Created Timestamp:</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      {incidentDetail.created_at ? String(incidentDetail.created_at).replace('T', ' ').slice(0, 19) : 'N/A'}
-                    </span>
-                  </div>
-                </div>
-              </div>
 
-              {/* Column 2: Affected Entities & Network */}
-              <div style={styles.subCard}>
-                <h4 style={styles.subCardTitle}>
-                  <Target size={15} color="var(--color-accent)" />
-                  <span>Affected Entities & Telemetry</span>
-                </h4>
-                <div style={styles.detailsListGrid}>
+                  {/* 5. Confidence */}
+                  <div style={styles.detailItem}>
+                    <span style={styles.detailLabel}>Confidence:</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: '700', color: 'var(--text-primary)' }}>
+                      {(incidentDetail.confidence_score !== undefined && incidentDetail.confidence_score !== null)
+                        ? `${incidentDetail.confidence_score}%`
+                        : ((incidentDetail.ml_confidence !== undefined && incidentDetail.ml_confidence !== null)
+                          ? `${incidentDetail.ml_confidence}%`
+                          : 'N/A')}
+                    </span>
+                  </div>
+
+                  {/* 6. Affected Asset */}
                   <div style={styles.detailItem}>
                     <span style={styles.detailLabel}>Affected Asset:</span>
                     <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
                       {incidentDetail.affected_asset || incidentDetail.asset_name || incidentDetail.asset_id || 'N/A'}
                     </span>
                   </div>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>Target User:</span>
-                    <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
-                      {incidentDetail.affected_user || incidentDetail.username || 'N/A'}
-                    </span>
-                  </div>
+
+                  {/* 7. Source IP */}
                   <div style={styles.detailItem}>
                     <span style={styles.detailLabel}>Source IP:</span>
                     <span style={styles.detailValueMono}>{incidentDetail.source_ip || 'N/A'}</span>
                   </div>
+
+                  {/* 8. User */}
                   <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>Destination IP:</span>
-                    <span style={styles.detailValueMono}>{incidentDetail.destination_ip || 'N/A'}</span>
-                  </div>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>Attack Chain Link:</span>
-                    <span style={styles.detailValueMono}>
-                      {incidentDetail.attack_chain_id ? (
-                        <span className="badge status-detected">{incidentDetail.attack_chain_id}</span>
-                      ) : 'None'}
+                    <span style={styles.detailLabel}>User:</span>
+                    <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
+                      {incidentDetail.affected_user || incidentDetail.username || 'N/A'}
                     </span>
                   </div>
+
+                  {/* 9. IOC */}
                   <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>Assigned Analyst:</span>
-                    <span style={{ color: 'var(--color-accent)', fontWeight: '600' }}>
-                      {incidentDetail.assigned_to || 'Unassigned'}
+                    <span style={styles.detailLabel}>IOC:</span>
+                    <span className={`badge ${incidentDetail.ioc_status === 'Hit' || incidentDetail.ioc_status === 'Malicious' || incidentDetail.ioc_status === true ? 'severity-critical' : 'status-success'}`}>
+                      {incidentDetail.ioc_status === true ? 'Malicious' : (incidentDetail.ioc_status || 'N/A')}
                     </span>
                   </div>
+
+                  {/* 10. MITRE Technique */}
                   <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>Current Status:</span>
-                    <Badge type="status" value={incidentDetail.status || 'Open'} />
-                  </div>
-                  <div style={styles.detailItem}>
-                    <span style={styles.detailLabel}>Last Updated:</span>
-                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                      {incidentDetail.updated_at ? String(incidentDetail.updated_at).replace('T', ' ').slice(0, 19) : 'N/A'}
+                    <span style={styles.detailLabel}>MITRE Technique:</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.78rem', color: 'var(--text-primary)' }}>
+                      {(incidentDetail.mitre_techniques && incidentDetail.mitre_techniques.length > 0)
+                        ? incidentDetail.mitre_techniques.join(', ')
+                        : ((incidentDetail.mitre_technique && incidentDetail.mitre_technique.length > 0)
+                          ? incidentDetail.mitre_technique.join(', ')
+                          : 'N/A')}
                     </span>
                   </div>
+
+                  {/* 11. CVE */}
+                  <div style={styles.detailItem}>
+                    <span style={styles.detailLabel}>CVE:</span>
+                    <span style={{ fontFamily: 'var(--font-mono)', fontWeight: '600', color: incidentDetail.cve_id ? 'var(--color-accent)' : 'var(--text-muted)' }}>
+                      {incidentDetail.cve_id || 'N/A'}
+                    </span>
+                  </div>
+
+                  {/* 12. CVSS */}
+                  <div style={styles.detailItem}>
+                    <span style={styles.detailLabel}>CVSS:</span>
+                    <span style={{
+                      fontFamily: 'var(--font-mono)',
+                      fontWeight: '700',
+                      color: (incidentDetail.cvss_score !== null && incidentDetail.cvss_score !== undefined && incidentDetail.cvss_score >= 7.0)
+                        ? 'var(--color-critical)'
+                        : 'var(--text-primary)'
+                    }}>
+                      {(incidentDetail.cvss_score !== null && incidentDetail.cvss_score !== undefined)
+                        ? incidentDetail.cvss_score
+                        : 'N/A'}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Additional Triage Meta Bar */}
+                <div style={{ marginTop: '0.4rem', paddingTop: '0.5rem', borderTop: '1px solid var(--border-color)', display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.4rem', fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                  <span>Priority: <strong style={{ color: 'var(--text-primary)' }}>{incidentDetail.priority || '—'}</strong></span>
+                  <span>Status: <strong style={{ color: 'var(--color-accent)' }}>{incidentDetail.status || 'Open'}</strong></span>
+                  <span>Assigned: <strong style={{ color: 'var(--text-primary)' }}>{incidentDetail.assigned_to || incidentDetail.assignee || 'Unassigned'}</strong></span>
+                  <span>Created: <span style={{ fontFamily: 'var(--font-mono)' }}>{incidentDetail.created_at ? String(incidentDetail.created_at).replace('T', ' ').slice(0, 19) : 'N/A'}</span></span>
+                </div>
+              </div>
+
+              {/* Card 2: Risk Factors (6 exact factors) */}
+              <div style={styles.subCard}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <h4 style={styles.subCardTitle}>
+                    <AlertTriangle size={15} color="var(--color-accent)" />
+                    <span>Risk Factors</span>
+                  </h4>
+                  <span className="badge severity-critical" style={{ fontSize: '0.7rem' }}>
+                    Authoritative M3 Factors
+                  </span>
+                </div>
+
+                <div style={styles.riskFactorCard}>
+                  {[
+                    { key: 'critical_asset', label: 'Critical asset', desc: 'Asset criticality established as Critical in M3' },
+                    { key: 'high_ml_confidence', label: 'High ML confidence', desc: 'ML threat confidence score >= 80%' },
+                    { key: 'malicious_ioc', label: 'Malicious IOC', desc: 'Active threat intel Indicator of Compromise match' },
+                    { key: 'high_cvss', label: 'High CVSS', desc: 'Vulnerability exposure with CVSS >= 7.0' },
+                    { key: 'multiple_related_events', label: 'Multiple related events', desc: 'Attack correlation across > 1 security event' },
+                    { key: 'ransomware_behavior_detected', label: 'Ransomware behavior detected', desc: 'Ransomware behavioral classification signature' }
+                  ].map((rf) => {
+                    const isTriggered = incidentDetail.risk_factors
+                      ? Boolean(incidentDetail.risk_factors[rf.key])
+                      : false;
+
+                    return (
+                      <div
+                        key={rf.key}
+                        style={{
+                          ...styles.riskFactorItem,
+                          borderColor: isTriggered ? 'rgba(244, 63, 94, 0.35)' : 'var(--border-color)',
+                          backgroundColor: isTriggered ? 'rgba(244, 63, 94, 0.05)' : 'var(--bg-card)'
+                        }}
+                      >
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.1rem' }}>
+                          <span style={{ fontSize: '0.82rem', fontWeight: '700', color: isTriggered ? 'var(--color-critical)' : 'var(--text-primary)' }}>
+                            {rf.label}
+                          </span>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                            {rf.desc}
+                          </span>
+                        </div>
+
+                        <div>
+                          {isTriggered ? (
+                            <span className="badge severity-critical" style={{ fontSize: '0.72rem', display: 'inline-flex', alignItems: 'center', gap: '0.3rem', padding: '0.2rem 0.55rem' }}>
+                              <Flame size={12} />
+                              <span>Active</span>
+                            </span>
+                          ) : (
+                            <span className="badge status-success" style={{ fontSize: '0.72rem', opacity: 0.7, padding: '0.2rem 0.55rem' }}>
+                              ○ Inactive
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             </div>
@@ -599,6 +825,184 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
                   )}
                 </div>
               </div>
+            </div>
+
+            {/* Milestone 4 — Task 5: Attack Chain & Multi-Stage Kill Chain Progression */}
+            <div style={{ marginTop: '0.75rem', padding: '1rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
+                  <GitCommit size={17} color="var(--color-accent)" />
+                  <h4 style={{ margin: 0, fontSize: '0.9rem', fontWeight: '700', color: 'var(--color-accent)' }}>
+                    Attack Chain & Kill-Chain Progression
+                  </h4>
+                  {attackChainData?.attack_chain_id && (
+                    <span className="badge status-detected" style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem' }}>
+                      {attackChainData.attack_chain_id}
+                    </span>
+                  )}
+                </div>
+                <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                  Click any stage to reveal Event ID, Timestamp, Source, Destination, User, MITRE Technique & Risk
+                </span>
+              </div>
+
+              {/* Stages List */}
+              {attackChainData?.stages && attackChainData.stages.length > 0 ? (
+                <div style={{ display: 'flex', gap: '0.75rem', overflowX: 'auto', paddingBottom: '0.5rem', alignItems: 'stretch' }}>
+                  {attackChainData.stages.map((stg, sIdx) => {
+                    const isSelected = selectedStage?.stage_number === stg.stage_number && selectedStage?.event_id === stg.event_id;
+                    return (
+                      <div
+                        key={sIdx}
+                        onClick={() => setSelectedStage(stg)}
+                        style={{
+                          flex: '1 1 200px',
+                          minWidth: '190px',
+                          padding: '0.75rem',
+                          borderRadius: '6px',
+                          backgroundColor: isSelected ? 'rgba(6, 182, 212, 0.12)' : 'var(--bg-card)',
+                          border: isSelected ? '1.5px solid var(--color-accent)' : '1px solid var(--border-color)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          flexDirection: 'column',
+                          justifyContent: 'space-between',
+                          gap: '0.4rem',
+                          transition: 'all 0.15s ease'
+                        }}
+                        title={`Stage ${stg.stage_number}: ${stg.stage_name} — Click to inspect stage telemetry`}
+                      >
+                        <div>
+                          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '0.3rem', marginBottom: '0.2rem' }}>
+                            <span style={{ fontSize: '0.68rem', fontWeight: '700', color: 'var(--color-accent)', textTransform: 'uppercase' }}>
+                              Stage {stg.stage_number}
+                            </span>
+                            <span className="badge severity-high" style={{ fontSize: '0.65rem' }}>
+                              {stg.risk}
+                            </span>
+                          </div>
+                          <span style={{ fontSize: '0.82rem', fontWeight: '700', color: 'var(--text-primary)', display: 'block' }}>
+                            {stg.stage_name}
+                          </span>
+                        </div>
+
+                        <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: '0.35rem', display: 'flex', flexDirection: 'column', gap: '0.15rem' }}>
+                          <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
+                            Event: <strong style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-secondary)' }}>{stg.event_id}</strong>
+                          </span>
+                          <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
+                            {stg.timestamp !== 'N/A' ? stg.timestamp : 'Timestamp: N/A'}
+                          </span>
+                        </div>
+
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '0.25rem', marginTop: '0.1rem' }}>
+                          <span style={{ fontSize: '0.65rem', color: 'var(--color-accent)', fontWeight: '600' }}>
+                            {isSelected ? 'Viewing details ▼' : 'Click to inspect →'}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div style={{ padding: '0.75rem', backgroundColor: 'var(--bg-card)', borderRadius: '4px', border: '1px solid var(--border-color)' }}>
+                  <span className="muted" style={{ fontSize: '0.78rem' }}>
+                    No attack chain stages available for this incident.
+                  </span>
+                </div>
+              )}
+
+              {/* Selected Stage Detail Drawer / Panel (Revealing all 7 required fields) */}
+              {selectedStage && (
+                <div style={{ marginTop: '0.75rem', padding: '0.85rem 1rem', backgroundColor: 'var(--bg-card)', borderRadius: '6px', border: '1px solid var(--color-accent)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.4rem' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                      <Info size={16} color="var(--color-accent)" />
+                      <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--color-accent)' }}>
+                        Stage {selectedStage.stage_number} Details: {selectedStage.stage_name}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      {onInvestigateEvent && selectedStage.event_id && selectedStage.event_id !== 'N/A' && (
+                        <button
+                          type="button"
+                          className="soc-button"
+                          onClick={() => onInvestigateEvent(selectedStage.event_id)}
+                          style={{
+                            fontSize: '0.75rem',
+                            backgroundColor: 'var(--color-accent)',
+                            color: '#000',
+                            fontWeight: '700',
+                            padding: '0.25rem 0.65rem'
+                          }}
+                          title={`Drill down to Event Investigation for ${selectedStage.event_id}`}
+                        >
+                          <ExternalLink size={12} style={{ marginRight: '0.25rem' }} />
+                          <span>Investigate Event ({selectedStage.event_id}) →</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="soc-button"
+                        onClick={() => setSelectedStage(null)}
+                        style={{ fontSize: '0.72rem', padding: '0.2rem 0.5rem' }}
+                      >
+                        ✕ Close
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Exactly the 7 Required Fields per M4 Task 5 */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '0.6rem' }}>
+                    {/* 1. Event ID */}
+                    <div style={styles.detailItem}>
+                      <span style={styles.detailLabel}>Event ID:</span>
+                      <span style={styles.detailValueMono}>
+                        <strong style={{ color: 'var(--color-accent)' }}>{selectedStage.event_id || 'N/A'}</strong>
+                      </span>
+                    </div>
+
+                    {/* 2. Timestamp */}
+                    <div style={styles.detailItem}>
+                      <span style={styles.detailLabel}>Timestamp:</span>
+                      <span style={styles.detailValueMono}>{selectedStage.timestamp || 'N/A'}</span>
+                    </div>
+
+                    {/* 3. Source */}
+                    <div style={styles.detailItem}>
+                      <span style={styles.detailLabel}>Source:</span>
+                      <span style={styles.detailValueMono}>{selectedStage.source || 'N/A'}</span>
+                    </div>
+
+                    {/* 4. Destination */}
+                    <div style={styles.detailItem}>
+                      <span style={styles.detailLabel}>Destination:</span>
+                      <span style={styles.detailValueMono}>{selectedStage.destination || 'N/A'}</span>
+                    </div>
+
+                    {/* 5. User */}
+                    <div style={styles.detailItem}>
+                      <span style={styles.detailLabel}>User:</span>
+                      <span style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{selectedStage.user || 'N/A'}</span>
+                    </div>
+
+                    {/* 6. MITRE Technique */}
+                    <div style={styles.detailItem}>
+                      <span style={styles.detailLabel}>MITRE Technique:</span>
+                      <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--color-high)', fontWeight: '600' }}>
+                        {selectedStage.mitre_technique || 'N/A'}
+                      </span>
+                    </div>
+
+                    {/* 7. Risk */}
+                    <div style={styles.detailItem}>
+                      <span style={styles.detailLabel}>Risk:</span>
+                      <span style={{ fontWeight: '700', color: 'var(--color-critical)' }}>
+                        {selectedStage.risk || 'N/A'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Explainable Risk Reasons (XAI) */}
@@ -759,18 +1163,31 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
               </div>
             </div>
 
-            {/* DEDICATED ANALYST FEEDBACK SECTION (POST /api/v1/incidents/{incident_id}/feedback) */}
+            {/* DEDICATED ANALYST FEEDBACK SECTION (Milestone 4 Task 13) */}
             <div style={{ marginTop: '0.75rem', padding: '1rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.6rem', flexWrap: 'wrap', gap: '0.5rem' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '0.45rem' }}>
                   <ShieldCheck size={16} color="var(--color-accent)" />
                   <span style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)' }}>
-                    Dedicated Analyst Feedback (True Positive / False Positive)
+                    AI Prediction &amp; Analyst Feedback (Task 13)
                   </span>
                 </div>
                 <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-                  Per-incident isolation • Future model improvement • Separate from lifecycle status
+                  AI Prediction ≠ Analyst Feedback • Dedicated MongoDB persistence
                 </span>
+              </div>
+
+              {/* Explicit AI Prediction Display */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.5rem 0.75rem', backgroundColor: 'var(--bg-card)', borderRadius: '6px', border: '1px solid var(--border-subtle)', marginBottom: '0.6rem' }}>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', fontWeight: '600' }}>AI Prediction:</span>
+                <span className="badge status-detected" style={{ fontWeight: '700', fontSize: '0.78rem' }}>
+                  {incidentDetail.threat_type || 'Suspicious'}
+                </span>
+                {incidentDetail.ml_confidence !== null && (
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                    ({incidentDetail.ml_confidence}% ML Confidence)
+                  </span>
+                )}
               </div>
 
               {feedbackSuccess && (
@@ -791,7 +1208,7 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.4rem' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', fontWeight: '600' }}>Active Feedback:</span>
-                      <span className={`badge ${incidentDetail.feedback.label === 'True Positive' ? 'severity-critical' : 'status-success'}`} style={{ fontSize: '0.75rem' }}>
+                      <span className={`badge ${incidentDetail.feedback.label === 'True Positive' || incidentDetail.feedback.label === 'Correct' ? 'severity-critical' : 'status-success'}`} style={{ fontSize: '0.75rem' }}>
                         {incidentDetail.feedback.label}
                       </span>
                     </div>
@@ -812,22 +1229,22 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem' }}>
                 <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
                   <span style={{ fontSize: '0.75rem', fontWeight: '600', color: 'var(--text-secondary)' }}>
-                    Assessment:
+                    Analyst Feedback:
                   </span>
                   <button
                     type="button"
                     className="soc-button"
-                    onClick={() => setFeedbackLabel('True Positive')}
+                    onClick={() => setFeedbackLabel('Correct')}
                     style={{
                       fontSize: '0.75rem',
                       padding: '0.3rem 0.7rem',
-                      backgroundColor: feedbackLabel === 'True Positive' ? 'rgba(244, 63, 94, 0.2)' : 'transparent',
-                      borderColor: feedbackLabel === 'True Positive' ? 'var(--color-critical)' : 'var(--border-color)',
-                      color: feedbackLabel === 'True Positive' ? 'var(--color-critical)' : 'var(--text-secondary)',
-                      fontWeight: feedbackLabel === 'True Positive' ? '700' : '400'
+                      backgroundColor: feedbackLabel === 'Correct' || feedbackLabel === 'True Positive' ? 'rgba(34, 197, 94, 0.2)' : 'transparent',
+                      borderColor: feedbackLabel === 'Correct' || feedbackLabel === 'True Positive' ? 'var(--color-success)' : 'var(--border-color)',
+                      color: feedbackLabel === 'Correct' || feedbackLabel === 'True Positive' ? 'var(--color-success)' : 'var(--text-secondary)',
+                      fontWeight: feedbackLabel === 'Correct' || feedbackLabel === 'True Positive' ? '700' : '400'
                     }}
                   >
-                    ● True Positive
+                    ✓ Correct (True Positive)
                   </button>
                   <button
                     type="button"
@@ -836,13 +1253,13 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
                     style={{
                       fontSize: '0.75rem',
                       padding: '0.3rem 0.7rem',
-                      backgroundColor: feedbackLabel === 'False Positive' ? 'rgba(34, 197, 94, 0.2)' : 'transparent',
-                      borderColor: feedbackLabel === 'False Positive' ? 'var(--color-success)' : 'var(--border-color)',
-                      color: feedbackLabel === 'False Positive' ? 'var(--color-success)' : 'var(--text-secondary)',
+                      backgroundColor: feedbackLabel === 'False Positive' ? 'rgba(244, 63, 94, 0.2)' : 'transparent',
+                      borderColor: feedbackLabel === 'False Positive' ? 'var(--color-critical)' : 'var(--border-color)',
+                      color: feedbackLabel === 'False Positive' ? 'var(--color-critical)' : 'var(--text-secondary)',
                       fontWeight: feedbackLabel === 'False Positive' ? '700' : '400'
                     }}
                   >
-                    ● False Positive
+                    ✗ False Positive
                   </button>
                 </div>
 
@@ -1036,43 +1453,211 @@ const IncidentResponsePage = ({ initialIncidentId = null }) => {
             </p>
           </div>
 
-          {/* Filter Bar Controls */}
-          <div style={styles.toolbarControls}>
-            <div style={styles.searchWrapper}>
-              <Search size={14} color="var(--text-muted)" style={styles.searchIcon} />
-              <input
-                type="text"
-                placeholder="Search Incident ID, Threat, Asset..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                style={styles.searchInput}
-              />
+          {/* Milestone 4 — Task 9: Advanced Filter Bar (Exact 10 Filters) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem', padding: '0.85rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', border: '1px solid var(--border-subtle)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '0.5rem' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                <Filter size={15} color="var(--color-accent)" />
+                <span style={{ fontSize: '0.8rem', fontWeight: '700', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Advanced Multi-Filter Engine (10 Filters)
+                </span>
+                {activeFilterCount > 0 && (
+                  <span className="badge status-detected" style={{ fontSize: '0.68rem', padding: '0.15rem 0.45rem' }}>
+                    {activeFilterCount} Active
+                  </span>
+                )}
+              </div>
+
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                <div style={styles.searchWrapper}>
+                  <Search size={14} color="var(--text-muted)" style={styles.searchIcon} />
+                  <input
+                    type="text"
+                    placeholder="Search ID, Threat, Asset, User..."
+                    value={searchQuery}
+                    onChange={(e) => { setSearchQuery(e.target.value); setPage(1); }}
+                    style={{ ...styles.searchInput, minWidth: '220px' }}
+                  />
+                </div>
+
+                {activeFilterCount > 0 && (
+                  <button
+                    className="soc-button"
+                    onClick={handleResetAllFilters}
+                    style={{ fontSize: '0.75rem', padding: '0.35rem 0.65rem', display: 'flex', alignItems: 'center', gap: '0.35rem', color: 'var(--color-critical)' }}
+                    title="Reset all 10 filters"
+                  >
+                    <RotateCcw size={12} />
+                    <span>Reset All</span>
+                  </button>
+                )}
+              </div>
             </div>
 
-            <select
-              value={statusFilter}
-              onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
-              style={styles.selectFilter}
-            >
-              <option value="">Status: All</option>
-              <option value="Open">Status: Open</option>
-              <option value="Investigating">Status: Investigating</option>
-              <option value="Resolved">Status: Resolved</option>
-              <option value="False Positive">Status: False Positive</option>
-            </select>
+            {/* 10 Filters Form Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.5rem' }}>
+              {/* 1. Severity */}
+              <div>
+                <label style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>1. Severity</label>
+                <select
+                  value={severityFilter}
+                  onChange={(e) => { setSeverityFilter(e.target.value); setPage(1); }}
+                  style={{ ...styles.selectFilter, width: '100%' }}
+                >
+                  <option value="">Severity: All</option>
+                  <option value="Critical">Critical</option>
+                  <option value="High">High</option>
+                  <option value="Medium">Medium</option>
+                  <option value="Low">Low</option>
+                </select>
+              </div>
 
-            <select
-              value={riskLevelFilter}
-              onChange={(e) => { setRiskLevelFilter(e.target.value); setPage(1); }}
-              style={styles.selectFilter}
-            >
-              <option value="">Risk Level: All</option>
-              <option value="Critical">Critical (81–100)</option>
-              <option value="High">High (61–80)</option>
-              <option value="Moderate">Moderate (41–60)</option>
-              <option value="Medium">Medium (21–40)</option>
-              <option value="Low">Low (0–20)</option>
-            </select>
+              {/* 2. Risk Level */}
+              <div>
+                <label style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>2. Risk Level</label>
+                <select
+                  value={riskLevelFilter}
+                  onChange={(e) => { setRiskLevelFilter(e.target.value); setPage(1); }}
+                  style={{ ...styles.selectFilter, width: '100%' }}
+                >
+                  <option value="">Risk Level: All</option>
+                  <option value="Critical">Critical (81–100)</option>
+                  <option value="High">High (61–80)</option>
+                  <option value="Moderate">Moderate (41–60)</option>
+                  <option value="Medium">Medium (21–40)</option>
+                  <option value="Low">Low (0–20)</option>
+                </select>
+              </div>
+
+              {/* 3. Threat Type */}
+              <div>
+                <label style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>3. Threat Type</label>
+                <select
+                  value={threatTypeFilter}
+                  onChange={(e) => { setThreatTypeFilter(e.target.value); setPage(1); }}
+                  style={{ ...styles.selectFilter, width: '100%' }}
+                >
+                  <option value="">Threat: All</option>
+                  {(filterOptions?.threat_types || ['Brute Force', 'DDoS', 'Malware', 'Port Scan', 'SQL Injection', 'Unauthorized Access', 'Data Exfiltration']).map((t) => (
+                    <option key={t} value={t}>{t}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 4. Asset */}
+              <div>
+                <label style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>4. Asset</label>
+                <select
+                  value={assetFilter}
+                  onChange={(e) => { setAssetFilter(e.target.value); setPage(1); }}
+                  style={{ ...styles.selectFilter, width: '100%' }}
+                >
+                  <option value="">Asset: All</option>
+                  {(filterOptions?.assets || ['Database-01', 'WebServer', 'Firewall', 'HR-PC-01', 'Finance-PC-02']).map((a) => (
+                    <option key={a} value={a}>{a}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 5. Department */}
+              <div>
+                <label style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>5. Department</label>
+                <select
+                  value={departmentFilter}
+                  onChange={(e) => { setDepartmentFilter(e.target.value); setPage(1); }}
+                  style={{ ...styles.selectFilter, width: '100%' }}
+                >
+                  <option value="">Dept: All</option>
+                  {(filterOptions?.departments || ['IT', 'Finance', 'HR', 'Operations', 'Engineering']).map((d) => (
+                    <option key={d} value={d}>{d}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 6. MITRE Technique */}
+              <div>
+                <label style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>6. MITRE Technique</label>
+                <select
+                  value={mitreFilter}
+                  onChange={(e) => { setMitreFilter(e.target.value); setPage(1); }}
+                  style={{ ...styles.selectFilter, width: '100%' }}
+                >
+                  <option value="">MITRE: All</option>
+                  {(filterOptions?.mitre_techniques || ['T1110', 'T1078', 'T1059', 'T1498', 'T1190']).map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 7. CVE */}
+              <div>
+                <label style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>7. CVE</label>
+                <select
+                  value={cveFilter}
+                  onChange={(e) => { setCveFilter(e.target.value); setPage(1); }}
+                  style={{ ...styles.selectFilter, width: '100%' }}
+                >
+                  <option value="">CVE: All</option>
+                  {(filterOptions?.cves || ['CVE-2023-1234', 'CVE-2024-1045', 'CVE-2024-2201']).map((c) => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 8. IOC Status */}
+              <div>
+                <label style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>8. IOC Status</label>
+                <select
+                  value={iocStatusFilter}
+                  onChange={(e) => { setIocStatusFilter(e.target.value); setPage(1); }}
+                  style={{ ...styles.selectFilter, width: '100%' }}
+                >
+                  <option value="">IOC: All</option>
+                  <option value="Malicious">Malicious</option>
+                  <option value="Suspicious">Suspicious</option>
+                  <option value="Clean">Clean</option>
+                  <option value="Unknown">Unknown</option>
+                </select>
+              </div>
+
+              {/* 9. Incident Status */}
+              <div>
+                <label style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>9. Incident Status</label>
+                <select
+                  value={statusFilter}
+                  onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }}
+                  style={{ ...styles.selectFilter, width: '100%' }}
+                >
+                  <option value="">Status: All</option>
+                  <option value="Open">Open</option>
+                  <option value="Investigating">Investigating</option>
+                  <option value="Resolved">Resolved</option>
+                  <option value="False Positive">False Positive</option>
+                </select>
+              </div>
+
+              {/* 10. Date Range (Start / End) */}
+              <div style={{ display: 'flex', gap: '0.35rem' }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>10. Start Date</label>
+                  <input
+                    type="date"
+                    value={startDateFilter}
+                    onChange={(e) => { setStartDateFilter(e.target.value); setPage(1); }}
+                    style={{ ...styles.searchInput, width: '100%', fontSize: '0.72rem', padding: '0.3rem 0.4rem' }}
+                  />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <label style={{ fontSize: '0.68rem', color: 'var(--text-muted)', display: 'block', marginBottom: '0.2rem' }}>End Date</label>
+                  <input
+                    type="date"
+                    value={endDateFilter}
+                    onChange={(e) => { setEndDateFilter(e.target.value); setPage(1); }}
+                    style={{ ...styles.searchInput, width: '100%', fontSize: '0.72rem', padding: '0.3rem 0.4rem' }}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -1329,6 +1914,21 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '0.45rem'
+  },
+  riskFactorCard: {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '0.45rem'
+  },
+  riskFactorItem: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: '0.5rem 0.75rem',
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: '4px',
+    border: '1px solid var(--border-color)',
+    transition: 'all 0.15s ease'
   },
   detailsListGrid: {
     display: 'grid',

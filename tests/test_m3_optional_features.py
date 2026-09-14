@@ -523,7 +523,7 @@ class TestMilestone3Regressions(unittest.TestCase):
     def test_priority_preserved_as_none(self):
         risk = {"event_id": "EVT_PRIO_01", "risk_score": 90, "risk_level": "Critical", "threat_type": "DDoS"}
         inc = self.service.create_incident_from_risk(risk, index=501)
-        self.assertIsNone(inc.priority)
+        self.assertEqual(inc.priority, "P1")  # M4 derived priority (Critical -> P1)
 
 
 if __name__ == "__main__":

@@ -11,14 +11,14 @@ import {
 } from 'recharts';
 
 /**
- * Custom Tooltip for Top Attack Types Chart
+ * Custom Tooltip for Threat Type Distribution Chart
  */
 const CustomTooltip = ({ active, payload }) => {
   if (active && payload && payload.length) {
     const item = payload[0];
     return (
       <div style={styles.tooltipContainer}>
-        <div style={styles.tooltipTitle}>{item.payload.event_type}</div>
+        <div style={styles.tooltipTitle}>{item.payload.threat_type}</div>
         <div style={styles.tooltipValue}>
           Frequency: <strong style={{ color: 'var(--color-accent)' }}>{item.value.toLocaleString()}</strong> events
         </div>
@@ -28,54 +28,47 @@ const CustomTooltip = ({ active, payload }) => {
   return null;
 };
 
-const TopAttackTypesChart = ({ allEvents = null }) => {
-  // Compute attack type frequencies directly from pre-fetched dataset
+const TopAttackTypesChart = ({ threatTypes = null, allEvents = null }) => {
+  // Consume authoritative M2 threat_types aggregation directly from backend
   const chartData = useMemo(() => {
-    if (!allEvents || !Array.isArray(allEvents)) return [];
+    if (threatTypes && typeof threatTypes === 'object') {
+      return Object.entries(threatTypes)
+        .map(([type, count]) => ({
+          threat_type: type,
+          count: Number(count) || 0
+        }))
+        .filter((item) => item.threat_type && item.threat_type !== 'Normal Activity')
+        .sort((a, b) => b.count - a.count)
+        .slice(0, 6);
+    }
+    return [];
+  }, [threatTypes]);
 
-    const counts = {};
-
-    allEvents.forEach((evt) => {
-      const type = evt.event_type || 'Unknown Event';
-      counts[type] = (counts[type] || 0) + 1;
-    });
-
-    const sorted = Object.keys(counts)
-      .map((type) => ({
-        event_type: type,
-        count: counts[type]
-      }))
-      .sort((a, b) => b.count - a.count);
-
-    // Select top 5
-    return sorted.slice(0, 5);
-  }, [allEvents]);
-
-  const isLoading = allEvents === null;
+  const isLoading = threatTypes === null && allEvents === null;
 
   return (
     <div className="panel" style={styles.panel}>
       <div style={styles.header}>
         <div>
           <h3 className="section-title" style={{ fontSize: '0.95rem', margin: 0 }}>
-            Top Attack Types
+            Threat Type
           </h3>
           <p className="muted" style={{ fontSize: '0.75rem', margin: '0.15rem 0 0 0' }}>
-            Most frequent security event types
+            Distribution across threat categories
           </p>
         </div>
         <span className="badge status-detected" style={{ fontSize: '0.68rem' }}>
-          Live Frequency
+          Authoritative M2 ML
         </span>
       </div>
 
       {isLoading ? (
         <div style={styles.stateContainer}>
-          <p className="muted" style={{ fontSize: '0.8rem' }}>Loading attack type analytics...</p>
+          <p className="muted" style={{ fontSize: '0.8rem' }}>Loading threat type analytics...</p>
         </div>
       ) : chartData.length === 0 ? (
         <div style={styles.stateContainer}>
-          <p className="muted" style={{ fontSize: '0.8rem' }}>No attack type data available.</p>
+          <p className="muted" style={{ fontSize: '0.8rem' }}>No threat type data available.</p>
         </div>
       ) : (
         <div style={styles.chartWrapper}>
@@ -95,19 +88,19 @@ const TopAttackTypesChart = ({ allEvents = null }) => {
               />
               <YAxis
                 type="category"
-                dataKey="event_type"
+                dataKey="threat_type"
                 stroke="var(--text-primary)"
-                fontSize={12}
+                fontSize={11}
                 tickLine={false}
                 axisLine={{ stroke: 'var(--border-subtle)' }}
-                width={140}
+                width={150}
               />
               <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(255, 255, 255, 0.03)' }} />
-              <Bar dataKey="count" fill="var(--color-accent)" radius={[0, 4, 4, 0]} barSize={20}>
+              <Bar dataKey="count" fill="var(--color-accent)" radius={[0, 4, 4, 0]} barSize={18}>
                 {chartData.map((entry, index) => (
                   <Cell 
                     key={`bar-cell-${index}`} 
-                    fill={index === 0 ? 'var(--color-accent)' : index === 1 ? '#38bdf8' : 'rgba(6, 182, 212, 0.75)'} 
+                    fill={index === 0 ? 'var(--color-critical)' : index === 1 ? 'var(--color-high)' : index === 2 ? '#38bdf8' : 'rgba(6, 182, 212, 0.75)'} 
                   />
                 ))}
               </Bar>

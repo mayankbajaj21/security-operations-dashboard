@@ -75,16 +75,23 @@ def get_high_risk_events(
         events_coll = db["security_events"]
         pred_coll = db["threat_predictions"]
 
-        # Fetch predictions map
-        pred_cursor = pred_coll.find({}, {"_id": 0})
+        # Fetch predictions map — project only fields consumed by RiskScoringEngine
+        _PRED_PROJ_HIGH = {"_id": 0, "event_id": 1, "prediction": 1, "confidence_score": 1, "anomaly_score": 1, "threat_type": 1}
+        pred_cursor = pred_coll.find({}, _PRED_PROJ_HIGH)
         pred_map = {p["event_id"]: p for p in pred_cursor if "event_id" in p}
 
-        # Query events
+        # Query events — project only fields consumed by RiskScoringEngine + display fields
+        _EVT_PROJ_HIGH = {
+            "_id": 0, "event_id": 1, "event_severity": 1, "severity": 1,
+            "raw_cvss_score": 1, "cvss_score": 1, "asset_criticality": 1,
+            "criticality": 1, "threat_intel_match": 1, "event_type": 1,
+            "asset_name": 1, "username": 1, "timestamp": 1
+        }
         filter_query: Dict[str, Any] = {}
         if threat_type and str(threat_type).strip():
             filter_query["event_type"] = str(threat_type).strip()
 
-        events_cursor = events_coll.find(filter_query, {"_id": 0})
+        events_cursor = events_coll.find(filter_query, _EVT_PROJ_HIGH)
         high_risk_records = []
 
         for evt in events_cursor:
@@ -168,10 +175,17 @@ def get_risk_summary() -> dict:
         events_coll = db["security_events"]
         pred_coll = db["threat_predictions"]
 
-        pred_cursor = pred_coll.find({}, {"_id": 0})
+        # Project only the fields consumed by RiskScoringEngine.calculate() and factor tallies
+        _PRED_PROJ_SUM = {"_id": 0, "event_id": 1, "prediction": 1, "confidence_score": 1, "threat_type": 1}
+        pred_cursor = pred_coll.find({}, _PRED_PROJ_SUM)
         pred_map = {p["event_id"]: p for p in pred_cursor if "event_id" in p}
 
-        events_cursor = events_coll.find({}, {"_id": 0})
+        _EVT_PROJ_SUM = {
+            "_id": 0, "event_id": 1, "event_severity": 1,
+            "raw_cvss_score": 1, "asset_criticality": 1,
+            "threat_intel_match": 1, "event_type": 1
+        }
+        events_cursor = events_coll.find({}, _EVT_PROJ_SUM)
         
         distribution = {"Critical": 0, "High": 0, "Moderate": 0, "Medium": 0, "Low": 0}
         total_score = 0

@@ -141,7 +141,7 @@ class TestMilestone3APIs(unittest.TestCase):
         self.assertEqual(data["incident_id"], test_inc.incident_id)
         self.assertEqual(data["risk_score"], 88)
         self.assertEqual(data["risk_level"], "Critical")
-        self.assertIsNone(data["priority"])  # Preserved as None
+        self.assertEqual(data["priority"], "P1")  # M4 derived priority (Critical -> P1)
 
         # 404 test for nonexistent ID
         res_404 = self.client.get("/api/v1/incidents/INC_NONEXISTENT_99999")

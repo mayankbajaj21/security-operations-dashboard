@@ -17,7 +17,8 @@ import json
 import math
 import re
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, Header, status
+from pydantic import BaseModel, Field
 import pandas as pd
 from pymongo.errors import PyMongoError
 
@@ -435,3 +436,116 @@ def get_threat_summary() -> ThreatSummaryResponse:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Database service unavailable")
     except Exception as e:
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to calculate threat summary: {str(e)}")
+
+
+class PredictionFeedbackRequest(BaseModel):
+    actual_feedback: str = Field(..., description="Analyst evaluation: 'Correct' or 'False Positive'")
+    prediction: Optional[str] = Field(default=None, description="Original AI prediction label")
+    analyst: Optional[str] = Field(default="SOC Analyst", description="Analyst username submitting feedback")
+    comment: Optional[str] = Field(default=None, description="Optional analyst evaluation notes")
+
+
+@router.post("/predictions/{event_id}/feedback", status_code=status.HTTP_200_OK)
+def submit_prediction_feedback(
+    event_id: str,
+    request: PredictionFeedbackRequest,
+    authorization: Optional[str] = Header(None)
+) -> dict:
+    """
+    Milestone 4 — Task 13: Analyst Feedback for Predictions.
+    Stores feedback in MongoDB `analyst_feedback` collection.
+    Distinguishes AI Prediction vs. Analyst Feedback without claiming automatic model retraining.
+    Resolves analyst identity from authenticated JWT session if present, else request body, else established 'SOC Analyst' default.
+    """
+    clean_fb = str(request.actual_feedback).strip()
+    valid_labels = {"correct": "Correct", "true positive": "Correct", "false positive": "False Positive"}
+    normalized_label = valid_labels.get(clean_fb.lower())
+    if not normalized_label:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid feedback label: '{clean_fb}'. Must be 'Correct' or 'False Positive'."
+        )
+
+    db = get_database()
+    events_coll = db["security_events"]
+    preds_coll = db["threat_predictions"]
+    feedback_coll = db["analyst_feedback"]
+
+    p_doc = preds_coll.find_one({"event_id": event_id})
+    e_doc = events_coll.find_one({"event_id": event_id})
+    if not p_doc and not e_doc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Security event with ID '{event_id}' not found."
+        )
+
+    orig_prediction = (
+        request.prediction or
+        (p_doc.get("prediction") if p_doc else None) or
+        (p_doc.get("threat_type") if p_doc else None) or
+        (e_doc.get("event_type") if e_doc else "Unknown")
+    )
+
+    # Resolve analyst identity: 1) Authenticated JWT token, 2) Request field, 3) Established default
+    analyst_identity = None
+    if authorization and authorization.startswith("Bearer "):
+        try:
+            from backend.app.services.auth_service import AuthService
+            auth_service = AuthService(db)
+            token = authorization.split(" ")[1].strip()
+            payload = auth_service.decode_access_token(token)
+            if payload and "sub" in payload:
+                user_doc = auth_service.get_user_by_email(payload["sub"])
+                if user_doc:
+                    analyst_identity = user_doc.get("full_name") or user_doc.get("email")
+        except Exception:
+            pass
+
+    if not analyst_identity and request.analyst and str(request.analyst).strip():
+        analyst_identity = str(request.analyst).strip()
+
+    if not analyst_identity:
+        analyst_identity = "SOC Analyst"
+
+    now_utc = datetime.now(timezone.utc).isoformat()
+    feedback_doc = {
+        "event_id": event_id,
+        "prediction": orig_prediction,
+        "actual_feedback": normalized_label,
+        "analyst": analyst_identity,
+        "timestamp": now_utc,
+        "comment": request.comment
+    }
+
+    try:
+        feedback_coll.update_one(
+            {"event_id": event_id},
+            {"$set": feedback_doc},
+            upsert=True
+        )
+    except PyMongoError as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to persist feedback in database: {str(e)}"
+        )
+
+    return {
+        "status": "success",
+        "message": "Analyst feedback recorded successfully.",
+        "data": feedback_doc,
+        "feedback": feedback_doc
+    }
+
+
+@router.get("/predictions/{event_id}/feedback", status_code=status.HTTP_200_OK)
+def get_prediction_feedback(event_id: str) -> dict:
+    """
+    Milestone 4 — Task 13: Retrieves stored analyst feedback for a specific prediction/event.
+    """
+    db = get_database()
+    feedback_coll = db["analyst_feedback"]
+    doc = feedback_coll.find_one({"event_id": event_id}, {"_id": 0})
+    if not doc:
+        return {"event_id": event_id, "has_feedback": False, "feedback": None}
+    return {"event_id": event_id, "has_feedback": True, "feedback": doc}
+

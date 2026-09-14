@@ -3,9 +3,9 @@ import {
   getThreatIntel, 
   getMitre, 
   getAssets, 
-  getAttackChains, 
-  getRiskSummary,
-  getIncidents 
+  getAttackChains,
+  getIncidents,
+  getVulnerabilities
 } from '../services/api';
 import Badge from '../components/Badge';
 import MetricCard from '../components/MetricCard';
@@ -26,10 +26,29 @@ import {
   Cpu,
   ArrowRight,
   AlertOctagon,
-  FileText
+  FileText,
+  ExternalLink,
+  Info
 } from 'lucide-react';
+import { 
+  ResponsiveContainer, 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip as RechartsTooltip, 
+  Cell 
+} from 'recharts';
 
-const SecurityIntelligencePage = () => {
+/**
+ * Security Intelligence & Threat Enrichment Hub
+ * Milestone 4: Final Integration Layer
+ * - Task 6: MITRE Technique Analysis (Table: Technique, Name, Events, Risk & Synchronized Distribution Chart)
+ * - Task 7: Vulnerability Panel (Critical, High, Medium CVE summaries, Table: CVE, Asset, CVSS, Severity, Status)
+ * - Task 8: IOC Intelligence Panel (IP, Domain, URL, File Hash, Email, Table: IOC, Type, Status, Threat Count, Affected Assets, First Seen, Last Seen)
+ */
+const SecurityIntelligencePage = ({ onInvestigateEvent = null }) => {
   const [intelSummary, setIntelSummary] = useState(null);
   const [threatIntelData, setThreatIntelData] = useState([]);
   const [mitreData, setMitreData] = useState(null);
@@ -37,48 +56,59 @@ const SecurityIntelligencePage = () => {
   const [attackChainsData, setAttackChainsData] = useState([]);
   const [riskSummary, setRiskSummary] = useState(null);
   const [incidentsData, setIncidentsData] = useState([]);
+  const [vulnerabilitiesData, setVulnerabilitiesData] = useState([]);
+  const [vulnerabilitySummary, setVulnerabilitySummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
   // Filter and Search State
   const [searchQuery, setSearchQuery] = useState('');
-  const [selectedTab, setSelectedTab] = useState('iocs'); // 'iocs' | 'assets' | 'mitre' | 'chains'
+  const [selectedTab, setSelectedTab] = useState('iocs'); // 'iocs' | 'vulnerabilities' | 'mitre' | 'chains'
+
+  // Task 8: IOC Type Filter (IP, Domain, URL, File Hash, Email)
+  const [iocTypeFilter, setIocTypeFilter] = useState('All');
+
+  // Task 7: Vulnerability Severity Filter (Critical, High, Medium, Low)
+  const [vulnSeverityFilter, setVulnSeverityFilter] = useState('All');
 
   const fetchSecurityIntelligence = useCallback(async (isManual = false) => {
     setLoading(true);
     setError(null);
     try {
-      const [intelRes, mitreRes, assetsRes, chainsRes, riskRes, incRes] = await Promise.all([
+      const [intelRes, mitreRes, assetsRes, chainsRes, incRes, vulnsRes] = await Promise.all([
         getThreatIntel({ noCache: isManual }).catch(() => null),
         getMitre({ noCache: isManual }).catch(() => null),
         getAssets({ noCache: isManual }).catch(() => null),
         getAttackChains({ window_minutes: 15 }, { noCache: isManual }).catch(() => null),
-        getRiskSummary({ noCache: isManual }).catch(() => null),
-        getIncidents({ page: 1, limit: 100 }, { noCache: isManual }).catch(() => null)
+        getIncidents({ page: 1, limit: 100 }, { noCache: isManual }).catch(() => null),
+        getVulnerabilities({}, { noCache: isManual }).catch(() => null)
       ]);
 
-      // 1. Threat Intel IoCs (GET /threat-intel -> indicators array)
+      // 1. Task 8: Threat Intel IoCs (GET /threat-intel -> indicators array)
       const rawIndicators = intelRes?.indicators || (Array.isArray(intelRes) ? intelRes : intelRes?.data || []);
       setThreatIntelData(rawIndicators);
       setIntelSummary(intelRes?.summary || null);
 
-      // 2. MITRE Mappings (GET /mitre -> mappings array & summary)
+      // 2. Task 6: MITRE Mappings & Techniques (GET /mitre)
       setMitreData(mitreRes);
 
-      // 3. Asset Inventory & Vulnerabilities (GET /assets -> assets array)
+      // 3. Asset Inventory
       const rawAssets = assetsRes?.assets || (Array.isArray(assetsRes) ? assetsRes : assetsRes?.data || []);
       setAssetsData(rawAssets);
 
-      // 4. Attack Chains (GET /api/v1/attack-chains -> data array)
+      // 4. Attack Chains
       const rawChains = Array.isArray(chainsRes?.data) ? chainsRes.data : Array.isArray(chainsRes) ? chainsRes : [];
       setAttackChainsData(rawChains);
 
-      // 5. Risk Summary (GET /api/v1/risk/summary)
-      setRiskSummary(riskRes);
-
-      // 6. Linked Incidents (GET /api/v1/incidents -> data array)
+      // 6. Linked Incidents
       const rawIncidents = Array.isArray(incRes?.data) ? incRes.data : Array.isArray(incRes) ? incRes : [];
       setIncidentsData(rawIncidents);
+
+      // 7. Task 7: Authoritative Vulnerabilities (GET /v1/vulnerabilities)
+      if (vulnsRes?.data) {
+        setVulnerabilitiesData(vulnsRes.data);
+        setVulnerabilitySummary(vulnsRes.summary);
+      }
     } catch (err) {
       console.error('Failed to load security intelligence records:', err);
       setError('Unable to load security intelligence analytics from the backend.');
@@ -91,68 +121,96 @@ const SecurityIntelligencePage = () => {
     fetchSecurityIntelligence();
   }, [fetchSecurityIntelligence]);
 
-  // Filtered IoCs
+  // =========================================================================
+  // TASK 8: Filtered IOCs with Type Support (IP, Domain, URL, File Hash, Email)
+  // =========================================================================
+  const iocTypesList = ['All', 'IP', 'Domain', 'URL', 'File Hash', 'Email'];
+
   const filteredIocs = useMemo(() => {
     if (!Array.isArray(threatIntelData)) return [];
-    if (!searchQuery.trim()) return threatIntelData;
-    const q = searchQuery.toLowerCase().trim();
     return threatIntelData.filter((item) => {
-      const val = item.indicator_value || item.indicator || item.ioc_value || '';
-      const type = item.indicator_type || item.type || '';
-      const name = item.threat_name || item.threat_type || '';
-      const actor = item.threat_actor || item.source || '';
+      // IOC Type filter
+      if (iocTypeFilter !== 'All') {
+        const itemType = (item.type || item.indicator_type || '').toLowerCase();
+        const targetType = iocTypeFilter.toLowerCase();
+        if (targetType === 'ip' && !itemType.includes('ip')) return false;
+        if (targetType === 'domain' && !itemType.includes('domain')) return false;
+        if (targetType === 'url' && !itemType.includes('url')) return false;
+        if (targetType === 'file hash' && !itemType.includes('hash')) return false;
+        if (targetType === 'email' && !itemType.includes('mail')) return false;
+      }
+      // Search Query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const iocVal = (item.ioc || item.indicator_value || item.indicator || '').toLowerCase();
+        const typeVal = (item.type || item.indicator_type || '').toLowerCase();
+        const statusVal = (item.status || item.severity || '').toLowerCase();
+        const assetVal = (item.affected_assets || '').toLowerCase();
+        if (!iocVal.includes(q) && !typeVal.includes(q) && !statusVal.includes(q) && !assetVal.includes(q)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [threatIntelData, iocTypeFilter, searchQuery]);
+
+  // =========================================================================
+  // TASK 7: Filtered Vulnerabilities (Critical, High, Medium, Low)
+  // =========================================================================
+  const vulnSeveritiesList = ['All', 'Critical', 'High', 'Medium', 'Low'];
+
+  const filteredVulnerabilities = useMemo(() => {
+    if (!Array.isArray(vulnerabilitiesData)) return [];
+    return vulnerabilitiesData.filter((item) => {
+      if (vulnSeverityFilter !== 'All') {
+        if ((item.severity || '').toLowerCase() !== vulnSeverityFilter.toLowerCase()) return false;
+      }
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const cve = (item.cve || item.cve_id || '').toLowerCase();
+        const ast = (item.asset || item.asset_name || '').toLowerCase();
+        const sev = (item.severity || '').toLowerCase();
+        const stat = (item.status || '').toLowerCase();
+        if (!cve.includes(q) && !ast.includes(q) && !sev.includes(q) && !stat.includes(q)) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [vulnerabilitiesData, vulnSeverityFilter, searchQuery]);
+
+  // =========================================================================
+  // TASK 6: Dynamic MITRE Technique Analysis Data
+  // =========================================================================
+  const mitreTechniques = useMemo(() => {
+    if (mitreData?.techniques && Array.isArray(mitreData.techniques) && mitreData.techniques.length > 0) {
+      return mitreData.techniques;
+    }
+    // Fallback from mappings if techniques key not yet present
+    if (mitreData?.mappings && Array.isArray(mitreData.mappings)) {
+      return mitreData.mappings.map((m) => ({
+        technique: m.mitre_id || 'T1110',
+        name: m.technique_name || m.event_type || 'Brute Force',
+        events: m.event_count || 0,
+        risk: 'High'
+      }));
+    }
+    return [];
+  }, [mitreData]);
+
+  const filteredMitreTechniques = useMemo(() => {
+    if (!searchQuery.trim()) return mitreTechniques;
+    const q = searchQuery.toLowerCase().trim();
+    return mitreTechniques.filter((t) => {
       return (
-        val.toLowerCase().includes(q) ||
-        type.toLowerCase().includes(q) ||
-        name.toLowerCase().includes(q) ||
-        actor.toLowerCase().includes(q)
+        t.technique.toLowerCase().includes(q) ||
+        t.name.toLowerCase().includes(q) ||
+        String(t.risk).toLowerCase().includes(q)
       );
     });
-  }, [threatIntelData, searchQuery]);
+  }, [mitreTechniques, searchQuery]);
 
-  // Flatten Asset Vulnerabilities for Tab 2
-  const assetVulnRows = useMemo(() => {
-    const rows = [];
-    assetsData.forEach((asset) => {
-      const vulns = asset.vulnerabilities || [];
-      if (vulns.length > 0) {
-        vulns.forEach((v) => {
-          rows.push({
-            asset_id: asset.asset_id,
-            asset_name: asset.asset_name,
-            criticality: asset.criticality || 'Medium',
-            owner: asset.owner || 'SOC IT',
-            department: asset.department || 'Operations',
-            operating_system: asset.operating_system || 'Windows',
-            cve_id: v.cve_id,
-            vulnerability_name: v.vulnerability_name,
-            vulnerability_severity: v.vulnerability_severity || v.severity || 'Critical',
-            cvss_score: v.vulnerability_cvss_score ?? v.cvss_score ?? 9.5,
-            patch_available: v.patch_available || 'Yes',
-            status: v.vulnerability_status || v.status || 'Open'
-          });
-        });
-      } else {
-        rows.push({
-          asset_id: asset.asset_id,
-          asset_name: asset.asset_name,
-          criticality: asset.criticality || 'Medium',
-          owner: asset.owner || 'SOC IT',
-          department: asset.department || 'Operations',
-          operating_system: asset.operating_system || 'Windows',
-          cve_id: 'None',
-          vulnerability_name: 'No Known CVE Records',
-          vulnerability_severity: 'Low',
-          cvss_score: 0.0,
-          patch_available: 'N/A',
-          status: 'Secure'
-        });
-      }
-    });
-    return rows;
-  }, [assetsData]);
-
-  // Derived Summary Counts
+  // Derived Top KPI counts
   const totalIocs = threatIntelData.length;
   const activeChainsCount = attackChainsData.length;
   const mitreMappedCount = mitreData?.summary?.mapped_events ?? 0;
@@ -168,7 +226,7 @@ const SecurityIntelligencePage = () => {
             <span>Security Intelligence & Threat Enrichment</span>
           </h2>
           <p className="muted" style={styles.pageSubtitle}>
-            M3 Integrated Threat Intelligence: IoCs, MITRE ATT&CK techniques, vulnerability exposure, attack chain linkage, and risk contribution
+            Milestone 4 Integration: Authoritative IOC intelligence, MITRE ATT&amp;CK analysis, vulnerability exposure, and attack chain correlation
           </p>
         </div>
 
@@ -178,7 +236,7 @@ const SecurityIntelligencePage = () => {
           style={{ fontSize: '0.78rem', display: 'flex', alignItems: 'center', gap: '0.35rem' }}
           title="Refresh Security Intelligence"
         >
-          <RefreshCw size={14} />
+          <RefreshCw size={14} className={loading ? 'spin' : ''} />
           <span>Refresh Intelligence</span>
         </button>
       </div>
@@ -217,7 +275,7 @@ const SecurityIntelligencePage = () => {
 
       {loading && (
         <div className="panel" style={styles.statePanel}>
-          <p className="muted">Correlating threat intelligence, MITRE mappings, and asset vulnerabilities...</p>
+          <p className="muted">Correlating threat intelligence, MITRE mappings, and vulnerability telemetry...</p>
         </div>
       )}
 
@@ -286,20 +344,20 @@ const SecurityIntelligencePage = () => {
                   }}
                 >
                   <Radar size={13} style={{ marginRight: '0.25rem' }} />
-                  <span>Threat Intelligence IoCs ({threatIntelData.length})</span>
+                  <span>IOC Intelligence ({threatIntelData.length})</span>
                 </button>
 
                 <button
-                  className={`soc-button ${selectedTab === 'assets' ? 'active' : ''}`}
-                  onClick={() => setSelectedTab('assets')}
+                  className={`soc-button ${selectedTab === 'vulnerabilities' ? 'active' : ''}`}
+                  onClick={() => setSelectedTab('vulnerabilities')}
                   style={{
                     fontSize: '0.78rem',
-                    backgroundColor: selectedTab === 'assets' ? 'var(--color-accent)' : undefined,
-                    color: selectedTab === 'assets' ? '#000' : undefined
+                    backgroundColor: selectedTab === 'vulnerabilities' ? 'var(--color-accent)' : undefined,
+                    color: selectedTab === 'vulnerabilities' ? '#000' : undefined
                   }}
                 >
                   <Server size={13} style={{ marginRight: '0.25rem' }} />
-                  <span>Asset CVE Exposure ({assetVulnRows.length})</span>
+                  <span>Vulnerability &amp; CVEs ({vulnerabilitiesData.length})</span>
                 </button>
 
                 <button
@@ -312,7 +370,7 @@ const SecurityIntelligencePage = () => {
                   }}
                 >
                   <Target size={13} style={{ marginRight: '0.25rem' }} />
-                  <span>MITRE Technique Matrix ({(mitreData?.mappings || []).length})</span>
+                  <span>MITRE Technique Analysis ({mitreTechniques.length})</span>
                 </button>
 
                 <button
@@ -325,7 +383,7 @@ const SecurityIntelligencePage = () => {
                   }}
                 >
                   <GitCommit size={13} style={{ marginRight: '0.25rem' }} />
-                  <span>Correlated Attack Chains ({attackChainsData.length})</span>
+                  <span>Attack Chains ({attackChainsData.length})</span>
                 </button>
               </div>
 
@@ -342,66 +400,104 @@ const SecurityIntelligencePage = () => {
               </div>
             </div>
 
-            {/* TAB 1: IOCS TABLE */}
+            {/* =========================================================================
+                TAB 1: TASK 8 — IOC INTELLIGENCE PANEL
+                Required: IOC, Type (IP, Domain, URL, File Hash, Email), Status, 
+                          Threat Count, Affected Assets, First Seen, Last Seen
+               ========================================================================= */}
             {selectedTab === 'iocs' && (
               <div>
+                {/* IOC Type Filter Buttons */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                    Filter by IOC Type:
+                  </span>
+                  {iocTypesList.map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      className="soc-button"
+                      onClick={() => setIocTypeFilter(t)}
+                      style={{
+                        fontSize: '0.72rem',
+                        padding: '0.25rem 0.6rem',
+                        backgroundColor: iocTypeFilter === t ? 'var(--color-accent)' : 'var(--bg-card)',
+                        color: iocTypeFilter === t ? '#000' : 'var(--text-secondary)',
+                        fontWeight: iocTypeFilter === t ? '700' : '400'
+                      }}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                    Showing {filteredIocs.length} indicator{filteredIocs.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+
                 {filteredIocs.length === 0 ? (
                   <div style={styles.emptyState}>
-                    <p className="muted">No threat intelligence IoC records match criteria.</p>
+                    <p className="muted">
+                      {iocTypeFilter === 'All' 
+                        ? 'No threat intelligence IOC records match search criteria.' 
+                        : `No ${iocTypeFilter} indicators recorded in authoritative threat intelligence catalog.`}
+                    </p>
                   </div>
                 ) : (
                   <div className="soc-table-container">
                     <table className="soc-table">
                       <thead>
                         <tr>
-                          <th>Indicator ID</th>
-                          <th>Indicator Value (IoC)</th>
+                          <th>IOC</th>
                           <th>Type</th>
-                          <th>Threat Classification</th>
-                          <th>Threat Actor</th>
-                          <th>Confidence</th>
-                          <th>Severity</th>
-                          <th>Event Matches</th>
-                          <th>Risk Weight</th>
+                          <th>Status</th>
+                          <th>Threat Count</th>
+                          <th>Affected Assets</th>
+                          <th>First Seen</th>
+                          <th>Last Seen</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {filteredIocs.map((ioc, idx) => {
-                          const val = ioc.indicator_value || ioc.indicator || ioc.ioc_value || '185.91.22.14';
-                          const type = ioc.indicator_type || ioc.type || 'IP Address';
-                          const id = ioc.indicator_id || `IOC00${idx + 1}`;
-                          const threat = ioc.threat_name || ioc.threat_type || 'Brute Force';
-                          const actor = ioc.threat_actor || ioc.source || 'Unknown';
-                          const conf = ioc.confidence || 'High';
-                          const sev = ioc.severity || 'High';
-                          const matchCount = ioc.event_match_count ?? 0;
+                        {filteredIocs.map((item, idx) => {
+                          const iocVal = item.ioc || item.indicator_value || item.indicator || 'N/A';
+                          const iocType = item.type || item.indicator_type || 'IP';
+                          const statusVal = item.status || item.severity || 'Active';
+                          const threatCount = item.threat_count ?? item.event_match_count ?? 0;
+                          const assetsVal = item.affected_assets || 'N/A';
+                          const firstSeen = item.first_seen || 'N/A';
+                          const lastSeen = item.last_seen || 'N/A';
 
                           return (
                             <tr key={idx}>
                               <td style={styles.monoCell}>
-                                <span className="badge status-detected">{id}</span>
-                              </td>
-                              <td style={styles.monoCell}>
-                                <strong style={{ color: 'var(--color-accent)' }}>{val}</strong>
+                                <strong style={{ color: 'var(--color-accent)' }}>{iocVal}</strong>
                               </td>
                               <td>
-                                <span className="badge status-detected">{type}</span>
-                              </td>
-                              <td style={{ fontWeight: '600', color: 'var(--text-primary)' }}>{threat}</td>
-                              <td style={{ color: 'var(--text-secondary)' }}>{actor}</td>
-                              <td>
-                                <span className="badge severity-high">{conf}</span>
+                                <span className="badge status-detected">{iocType}</span>
                               </td>
                               <td>
-                                <Badge type="severity" value={sev} />
-                              </td>
-                              <td style={styles.monoCell}>
-                                <span style={{ fontWeight: '700', color: matchCount > 0 ? 'var(--color-critical)' : 'var(--text-muted)' }}>
-                                  {matchCount} matches
+                                <span className={`badge ${statusVal === 'High' || statusVal === 'Critical' || statusVal === 'Malicious' ? 'severity-critical' : 'status-success'}`}>
+                                  {statusVal}
                                 </span>
                               </td>
                               <td style={styles.monoCell}>
-                                <span className="badge severity-critical">+10 pts</span>
+                                <span style={{ fontWeight: '700', color: threatCount > 0 ? 'var(--color-critical)' : 'var(--text-muted)' }}>
+                                  {threatCount}
+                                </span>
+                              </td>
+                              <td>
+                                <span style={{ color: assetsVal !== 'N/A' ? 'var(--text-primary)' : 'var(--text-muted)', fontWeight: assetsVal !== 'N/A' ? '600' : '400' }}>
+                                  {assetsVal}
+                                </span>
+                              </td>
+                              <td style={styles.monoCell}>
+                                <span style={{ fontSize: '0.72rem', color: firstSeen !== 'N/A' ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                                  {firstSeen}
+                                </span>
+                              </td>
+                              <td style={styles.monoCell}>
+                                <span style={{ fontSize: '0.72rem', color: lastSeen !== 'N/A' ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                                  {lastSeen}
+                                </span>
                               </td>
                             </tr>
                           );
@@ -413,104 +509,237 @@ const SecurityIntelligencePage = () => {
               </div>
             )}
 
-            {/* TAB 2: ASSET CVE EXPOSURE TABLE */}
-            {selectedTab === 'assets' && (
-              <div className="soc-table-container">
-                <table className="soc-table">
-                  <thead>
-                    <tr>
-                      <th>Asset ID</th>
-                      <th>Asset Hostname</th>
-                      <th>Criticality</th>
-                      <th>Owner / Dept</th>
-                      <th>Linked CVE</th>
-                      <th>Vulnerability Name</th>
-                      <th>Base CVSS</th>
-                      <th>Severity</th>
-                      <th>Patch Available</th>
-                      <th>Risk Engine Contribution</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {assetVulnRows.map((row, idx) => {
-                      const cvss = Number(row.cvss_score || 0);
-                      const isHighCvss = cvss >= 7.0;
+            {/* =========================================================================
+                TAB 2: TASK 7 — VULNERABILITY PANEL
+                Required: Critical CVEs, High CVEs, Medium CVEs summaries & affected assets
+                          Table: CVE, Asset, CVSS, Severity, Status
+               ========================================================================= */}
+            {selectedTab === 'vulnerabilities' && (
+              <div>
+                {/* Critical / High / Medium Summaries per M4 Task 7 */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: '0.75rem', marginBottom: '1rem' }}>
+                  <div className="panel" style={{ padding: '0.75rem', backgroundColor: 'var(--bg-card)', borderLeft: '3px solid var(--color-critical)' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>CRITICAL CVES</span>
+                    <div style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--color-critical)', marginTop: '0.15rem' }}>
+                      {vulnerabilitySummary?.critical_count ?? 0}
+                    </div>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>CVSS 9.0 – 10.0</span>
+                  </div>
 
-                      return (
-                        <tr key={idx}>
-                          <td style={styles.monoCell}>
-                            <span className="badge status-detected">{row.asset_id || `AST00${idx + 1}`}</span>
-                          </td>
-                          <td style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
-                            {row.asset_name}
-                          </td>
-                          <td>
-                            <Badge type="severity" value={row.criticality} />
-                          </td>
-                          <td style={{ color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
-                            {row.owner} ({row.department})
-                          </td>
-                          <td style={styles.monoCell}>
-                            <span className="badge status-detected">
-                              {row.cve_id}
-                            </span>
-                          </td>
-                          <td style={{ color: 'var(--text-primary)' }}>{row.vulnerability_name}</td>
-                          <td style={styles.monoCell}>
-                            <span style={{ fontWeight: '800', color: isHighCvss ? 'var(--color-critical)' : cvss > 0 ? 'var(--color-warning)' : 'var(--text-muted)' }}>
-                              {cvss > 0 ? cvss.toFixed(1) : '—'}
-                            </span>
-                          </td>
-                          <td>
-                            <Badge type="severity" value={row.vulnerability_severity} />
-                          </td>
-                          <td>
-                            <span className={`badge ${row.patch_available === 'Yes' ? 'status-success' : 'status-failed'}`}>
-                              {row.patch_available}
-                            </span>
-                          </td>
-                          <td style={styles.monoCell}>
-                            <span className="badge severity-high">
-                              +{((cvss / 10) * 20).toFixed(1)} / 20 pts
-                            </span>
-                          </td>
+                  <div className="panel" style={{ padding: '0.75rem', backgroundColor: 'var(--bg-card)', borderLeft: '3px solid var(--color-high)' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>HIGH CVES</span>
+                    <div style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--color-high)', marginTop: '0.15rem' }}>
+                      {vulnerabilitySummary?.high_count ?? 0}
+                    </div>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>CVSS 7.0 – 8.9</span>
+                  </div>
+
+                  <div className="panel" style={{ padding: '0.75rem', backgroundColor: 'var(--bg-card)', borderLeft: '3px solid var(--color-warning)' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>MEDIUM CVES</span>
+                    <div style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--color-warning)', marginTop: '0.15rem' }}>
+                      {vulnerabilitySummary?.medium_count ?? 0}
+                    </div>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>CVSS 4.0 – 6.9</span>
+                  </div>
+
+                  <div className="panel" style={{ padding: '0.75rem', backgroundColor: 'var(--bg-card)', borderLeft: '3px solid var(--color-accent)' }}>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-muted)', fontWeight: '700', textTransform: 'uppercase' }}>AFFECTED ASSETS</span>
+                    <div style={{ fontSize: '1.25rem', fontWeight: '800', color: 'var(--color-accent)', marginTop: '0.15rem' }}>
+                      {vulnerabilitySummary?.affected_assets_count ?? 0}
+                    </div>
+                    <span style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>Target infrastructure</span>
+                  </div>
+                </div>
+
+                {/* Severity Filter Controls */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem', flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: '0.75rem', fontWeight: '700', color: 'var(--text-secondary)' }}>
+                    Filter Severity:
+                  </span>
+                  {vulnSeveritiesList.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      className="soc-button"
+                      onClick={() => setVulnSeverityFilter(s)}
+                      style={{
+                        fontSize: '0.72rem',
+                        padding: '0.25rem 0.6rem',
+                        backgroundColor: vulnSeverityFilter === s ? 'var(--color-accent)' : 'var(--bg-card)',
+                        color: vulnSeverityFilter === s ? '#000' : 'var(--text-secondary)',
+                        fontWeight: vulnSeverityFilter === s ? '700' : '400'
+                      }}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                  <span style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginLeft: 'auto' }}>
+                    Showing {filteredVulnerabilities.length} record{filteredVulnerabilities.length === 1 ? '' : 's'}
+                  </span>
+                </div>
+
+                {filteredVulnerabilities.length === 0 ? (
+                  <div style={styles.emptyState}>
+                    <p className="muted">No vulnerability records match current filter criteria.</p>
+                  </div>
+                ) : (
+                  <div className="soc-table-container">
+                    <table className="soc-table">
+                      <thead>
+                        <tr>
+                          <th>CVE</th>
+                          <th>Asset</th>
+                          <th>CVSS</th>
+                          <th>Severity</th>
+                          <th>Status</th>
                         </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                      </thead>
+                      <tbody>
+                        {filteredVulnerabilities.map((v, idx) => {
+                          const cveVal = v.cve || v.cve_id || 'N/A';
+                          const assetVal = v.asset || v.asset_name || 'N/A';
+                          const cvssVal = v.cvss !== null && v.cvss !== undefined ? Number(v.cvss).toFixed(1) : 'N/A';
+                          const sevVal = v.severity || 'Unknown';
+                          const statusVal = v.status || 'Open';
+
+                          return (
+                            <tr key={idx}>
+                              <td style={styles.monoCell}>
+                                <strong style={{ color: 'var(--color-accent)' }}>{cveVal}</strong>
+                              </td>
+                              <td style={{ fontWeight: '600', color: 'var(--text-primary)' }}>
+                                {assetVal}
+                              </td>
+                              <td style={styles.monoCell}>
+                                <span style={{
+                                  fontWeight: '800',
+                                  color: Number(cvssVal) >= 9.0 ? 'var(--color-critical)' : Number(cvssVal) >= 7.0 ? 'var(--color-high)' : 'var(--text-primary)'
+                                }}>
+                                  {cvssVal}
+                                </span>
+                              </td>
+                              <td>
+                                <Badge type="severity" value={sevVal} />
+                              </td>
+                              <td>
+                                <span className={`badge ${statusVal.toLowerCase() === 'open' ? 'severity-critical' : 'status-success'}`}>
+                                  {statusVal}
+                                </span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 
-            {/* TAB 3: MITRE ATT&CK TECHNIQUE MATRIX */}
+            {/* =========================================================================
+                TAB 3: TASK 6 — MITRE TECHNIQUE ANALYSIS
+                Required: TABLE (Technique, Name, Events, Risk)
+                          CHART: MITRE technique distribution chart (synchronized)
+               ========================================================================= */}
             {selectedTab === 'mitre' && (
               <div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: '1rem', marginBottom: '1rem' }}>
-                  {(mitreData?.mappings || []).map((m, idx) => (
-                    <div key={idx} style={styles.mitreCard}>
-                      <div style={styles.mitreCardHeader}>
-                        <span style={styles.mitreTactic}>{m.tactic || 'CREDENTIAL ACCESS'}</span>
-                        <span className="badge status-detected">{m.mitre_id || 'T1110'}</span>
-                      </div>
-                      <strong style={{ fontSize: '0.9rem', color: 'var(--text-primary)', marginBottom: '0.25rem' }}>
-                        {m.technique_name || m.event_type}
-                      </strong>
-                      <p className="muted" style={{ fontSize: '0.75rem', margin: '0 0 0.5rem 0' }}>
-                        Associated with event type "{m.event_type}" across security telemetry.
+                {/* Synchronized MITRE Technique Distribution Chart */}
+                <div className="panel" style={{ padding: '1rem', backgroundColor: 'var(--bg-secondary)', marginBottom: '1.25rem', borderRadius: '6px', border: '1px solid var(--border-color)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem', flexWrap: 'wrap', gap: '0.5rem' }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '0.88rem', fontWeight: '700', color: 'var(--color-accent)' }}>
+                        MITRE ATT&amp;CK Technique Distribution
+                      </h4>
+                      <p className="muted" style={{ margin: '0.15rem 0 0 0', fontSize: '0.72rem' }}>
+                        Dynamic event frequency across observed ATT&amp;CK technique identifiers
                       </p>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '0.5rem', borderTop: '1px solid var(--border-subtle)', fontSize: '0.72rem' }}>
-                        <span style={{ color: 'var(--text-muted)' }}>Mapped Telemetry Logs:</span>
-                        <strong style={{ color: 'var(--color-accent)', fontFamily: 'var(--font-mono)' }}>
-                          {(m.event_count || 0).toLocaleString()} events
-                        </strong>
-                      </div>
                     </div>
-                  ))}
+                    <span className="badge status-detected" style={{ fontSize: '0.68rem' }}>
+                      Synchronized Telemetry Data
+                    </span>
+                  </div>
+
+                  {mitreTechniques.length === 0 ? (
+                    <div style={{ height: '140px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <p className="muted" style={{ fontSize: '0.8rem' }}>No MITRE technique distribution data available.</p>
+                    </div>
+                  ) : (
+                    <div style={{ width: '100%', height: 180 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart data={mitreTechniques} margin={{ top: 10, right: 20, left: 0, bottom: 20 }}>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.07)" />
+                          <XAxis 
+                            dataKey="technique" 
+                            stroke="var(--text-muted)" 
+                            tick={{ fill: 'var(--text-muted)', fontSize: 11, fontFamily: 'var(--font-mono)' }}
+                          />
+                          <YAxis 
+                            stroke="var(--text-muted)" 
+                            tick={{ fill: 'var(--text-muted)', fontSize: 11 }}
+                            allowDecimals={false}
+                          />
+                          <RechartsTooltip 
+                            formatter={(value, name, props) => [`${value} events (${props.payload.name})`, 'Observed Events']}
+                            contentStyle={{ backgroundColor: 'var(--bg-card)', borderColor: 'var(--border-color)', borderRadius: '6px', fontSize: '0.78rem' }}
+                          />
+                          <Bar dataKey="events" fill="#06b6d4" radius={[4, 4, 0, 0]}>
+                            {mitreTechniques.map((entry, index) => (
+                              <Cell key={`cell-${index}`} fill={entry.risk === 'Critical' ? '#f43f5e' : entry.risk === 'High' ? '#fb923c' : '#06b6d4'} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </div>
 
-                <div style={{ padding: '0.75rem 1rem', backgroundColor: 'var(--bg-secondary)', borderRadius: '6px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
-                  Total Evaluated Telemetry: <strong style={{ color: 'var(--text-primary)' }}>{mitreData?.summary?.total_events?.toLocaleString() ?? '0'}</strong> events • Mapped: <strong style={{ color: 'var(--color-accent)' }}>{mitreData?.summary?.mapped_events?.toLocaleString() ?? '0'}</strong> ({mitreData?.summary?.mapping_percentage ?? '0'}%)
+                {/* MITRE Technique Analysis Table */}
+                <div style={{ marginBottom: '0.5rem' }}>
+                  <h4 style={{ fontSize: '0.85rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '0.5rem' }}>
+                    MITRE ATT&amp;CK Technique Table
+                  </h4>
                 </div>
+
+                {filteredMitreTechniques.length === 0 ? (
+                  <div style={styles.emptyState}>
+                    <p className="muted">No MITRE techniques recorded in security events.</p>
+                  </div>
+                ) : (
+                  <div className="soc-table-container">
+                    <table className="soc-table">
+                      <thead>
+                        <tr>
+                          <th>Technique</th>
+                          <th>Name</th>
+                          <th>Events</th>
+                          <th>Risk</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredMitreTechniques.map((item, idx) => (
+                          <tr key={idx}>
+                            <td style={styles.monoCell}>
+                              <span className="badge status-detected" style={{ fontWeight: '700' }}>
+                                {item.technique}
+                              </span>
+                            </td>
+                            <td style={{ fontWeight: '600', color: 'var(--color-accent)' }}>
+                              {item.name}
+                            </td>
+                            <td style={styles.monoCell}>
+                              <strong style={{ color: 'var(--text-primary)' }}>
+                                {item.events?.toLocaleString()}
+                              </strong>
+                            </td>
+                            <td>
+                              <Badge type="severity" value={item.risk} />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
               </div>
             )}
 
@@ -548,18 +777,16 @@ const SecurityIntelligencePage = () => {
                           </strong>
                         </td>
                         <td style={styles.monoCell}>
-                          <span style={{ fontWeight: '700', color: 'var(--color-accent)' }}>
-                            {chain.confidence || chain.ml_confidence || 80}%
+                          <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>
+                            {chain.confidence || 80}%
                           </span>
                         </td>
-                        <td style={{ color: 'var(--text-secondary)' }}>
-                          {chain.affected_asset || chain.participating_entities?.asset_name || 'Production Host'}
-                        </td>
-                        <td>
-                          {chain.target_user || chain.username || chain.participating_entities?.username || 'analyst'}
-                        </td>
+                        <td>{chain.affected_asset || '—'}</td>
+                        <td>{chain.target_user || '—'}</td>
                         <td style={styles.monoCell}>
-                          {(chain.events || chain.related_events || []).length} logs
+                          <span className="badge status-detected">
+                            {(chain.events || []).length} events
+                          </span>
                         </td>
                       </tr>
                     ))}
@@ -578,9 +805,7 @@ const styles = {
   container: {
     display: 'flex',
     flexDirection: 'column',
-    gap: '1.25rem',
-    width: '100%',
-    boxSizing: 'border-box'
+    gap: '1.25rem'
   },
   headerRow: {
     display: 'flex',
@@ -597,35 +822,69 @@ const styles = {
     display: 'flex',
     alignItems: 'center',
     gap: '0.5rem',
-    color: 'var(--text-primary)',
-    fontFamily: 'var(--font-sans)',
-    letterSpacing: '-0.01em'
+    color: 'var(--text-primary)'
   },
   pageSubtitle: {
     fontSize: '0.8rem',
-    marginTop: '0.25rem',
-    marginBottom: 0,
-    color: 'var(--text-muted)',
-    fontFamily: 'var(--font-sans)'
+    margin: '0.2rem 0 0 0',
+    color: 'var(--text-muted)'
   },
   kpiGrid: {
     display: 'grid',
-    gridTemplateColumns: 'repeat(auto-fit, minmax(210px, 1fr))',
-    gap: '1.25rem'
+    gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
+    gap: '1rem'
   },
   contentSection: {
     display: 'flex',
     flexDirection: 'column',
     gap: '1.25rem'
   },
-  intelPillarCard: {
-    padding: '0.75rem',
+  statePanel: {
+    minHeight: '140px',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    textAlign: 'center'
+  },
+  emptyState: {
+    padding: '2rem',
+    textAlign: 'center',
     backgroundColor: 'var(--bg-card)',
     borderRadius: '6px',
+    border: '1px solid var(--border-color)'
+  },
+  monoCell: {
+    fontFamily: 'var(--font-mono)',
+    fontSize: '0.8rem'
+  },
+  searchWrapper: {
+    position: 'relative',
+    minWidth: '220px'
+  },
+  searchIcon: {
+    position: 'absolute',
+    left: '0.65rem',
+    top: '50%',
+    transform: 'translateY(-50%)'
+  },
+  searchInput: {
+    width: '100%',
+    padding: '0.35rem 0.65rem 0.35rem 2rem',
+    fontSize: '0.78rem',
+    backgroundColor: 'var(--bg-card)',
+    border: '1px solid var(--border-color)',
+    borderRadius: '4px',
+    color: 'var(--text-primary)',
+    outline: 'none'
+  },
+  intelPillarCard: {
+    padding: '0.65rem 0.85rem',
+    backgroundColor: 'var(--bg-card)',
+    borderRadius: '4px',
     border: '1px solid var(--border-color)',
     display: 'flex',
     flexDirection: 'column',
-    gap: '0.25rem'
+    gap: '0.2rem'
   },
   intelPillarTitle: {
     fontSize: '0.75rem',
@@ -633,69 +892,14 @@ const styles = {
     color: 'var(--text-primary)'
   },
   intelPillarWeight: {
-    fontSize: '0.7rem',
-    fontWeight: '700',
+    fontSize: '0.85rem',
+    fontWeight: '800',
     color: 'var(--color-accent)',
     fontFamily: 'var(--font-mono)'
   },
   intelPillarDesc: {
     fontSize: '0.68rem',
-    color: 'var(--text-muted)',
-    lineHeight: '1.3'
-  },
-  searchWrapper: {
-    position: 'relative',
-    display: 'flex',
-    alignItems: 'center'
-  },
-  searchIcon: {
-    position: 'absolute',
-    left: '0.6rem',
-    pointerEvents: 'none'
-  },
-  searchInput: {
-    padding: '0.35rem 0.6rem 0.35rem 1.85rem',
-    borderRadius: '6px',
-    backgroundColor: 'var(--bg-secondary)',
-    border: '1px solid var(--border-color)',
-    color: 'var(--text-primary)',
-    fontSize: '0.78rem',
-    minWidth: '200px'
-  },
-  monoCell: {
-    fontFamily: 'var(--font-mono)',
-    fontSize: '0.78rem'
-  },
-  mitreCard: {
-    padding: '1rem',
-    backgroundColor: 'var(--bg-secondary)',
-    borderRadius: '6px',
-    border: '1px solid var(--border-color)',
-    display: 'flex',
-    flexDirection: 'column'
-  },
-  mitreCardHeader: {
-    display: 'flex',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: '0.4rem'
-  },
-  mitreTactic: {
-    fontSize: '0.68rem',
-    fontWeight: '700',
-    color: 'var(--color-accent)',
-    letterSpacing: '0.04em'
-  },
-  statePanel: {
-    minHeight: '180px',
-    display: 'flex',
-    justifyContent: 'center',
-    alignItems: 'center',
-    textAlign: 'center'
-  },
-  emptyState: {
-    padding: '2rem',
-    textAlign: 'center'
+    color: 'var(--text-muted)'
   }
 };
 

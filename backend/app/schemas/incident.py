@@ -23,6 +23,28 @@ class IncidentStatus(str, Enum):
     RESOLVED = "Resolved"
     FALSE_POSITIVE = "False Positive"
 
+def map_risk_level_to_priority(risk_level: Optional[str]) -> Optional[str]:
+    """
+    Deterministic Milestone 4 SOC Priority Mapping:
+        Critical -> P1
+        High     -> P2
+        Moderate -> P3
+        Medium   -> P4
+        Low      -> P4
+    """
+    if not risk_level:
+        return None
+    rl = str(risk_level).strip().capitalize()
+    if rl == "Critical":
+        return "P1"
+    elif rl == "High":
+        return "P2"
+    elif rl == "Moderate":
+        return "P3"
+    elif rl in ("Medium", "Low"):
+        return "P4"
+    return "P4"
+
 
 class RecommendationItem(BaseModel):
     """
@@ -83,7 +105,7 @@ class Incident(BaseModel):
     risk_level: str = Field(..., description="5-tier risk hierarchy level ('Critical', 'High', 'Moderate', 'Medium', 'Low')")
     priority: Optional[str] = Field(
         default=None, 
-        description="SOC Priority level. Note: Formal priority calculation stage is pending explicit specification."
+        description="SOC Priority level (P1-P4 derived deterministically from risk level)."
     )
     affected_asset: Optional[str] = Field(default=None, description="Compromised or targeted asset hostname/ID")
     asset_id: Optional[str] = Field(default=None, description="Alias for affected_asset")
@@ -107,6 +129,11 @@ class Incident(BaseModel):
     reasons: List[str] = Field(default_factory=list, description="Array of XAI explainability factors")
     recommendations: List[str] = Field(default_factory=list, description="Prescriptive analyst mitigation actions")
     feedback: Optional[AnalystFeedback] = Field(default=None, description="Dedicated analyst feedback ('True Positive' or 'False Positive')")
+    cve_id: Optional[str] = Field(default=None, description="Correlated CVE identifier (e.g. 'CVE-2024-1045')")
+    cvss_score: Optional[float] = Field(default=None, ge=0.0, le=10.0, description="Correlated CVSS base score (0.0 - 10.0)")
+    risk_factors: Optional[Dict[str, bool]] = Field(default=None, description="6 evaluated M3 risk factors")
+    department: Optional[str] = Field(default=None, description="Department of affected asset")
+    severity: Optional[str] = Field(default=None, description="Operational severity rating of incident")
     created_at: str = Field(..., description="UTC ISO timestamp of incident creation")
     updated_at: str = Field(..., description="UTC ISO timestamp of latest status update")
 
@@ -166,6 +193,10 @@ class Incident(BaseModel):
             self.investigation_notes = self.notes
         elif self.investigation_notes and not self.notes:
             self.notes = self.investigation_notes
+
+        # Populate priority deterministically from risk_level if None or empty (preserving existing valid priority)
+        if not self.priority and self.risk_level:
+            self.priority = map_risk_level_to_priority(self.risk_level)
         return self
 
 
@@ -198,6 +229,15 @@ class IncidentCreate(BaseModel):
     reasons: List[str] = Field(default_factory=list)
     recommendations: List[str] = Field(default_factory=list)
     feedback: Optional[AnalystFeedback] = Field(default=None)
+    cve_id: Optional[str] = Field(default=None)
+    cvss_score: Optional[float] = Field(default=None)
+    risk_factors: Optional[Dict[str, bool]] = Field(default=None)
+
+    @model_validator(mode="after")
+    def derive_priority(self) -> "IncidentCreate":
+        if not self.priority and self.risk_level:
+            self.priority = map_risk_level_to_priority(self.risk_level)
+        return self
 
 
 class IncidentStatusUpdate(BaseModel):

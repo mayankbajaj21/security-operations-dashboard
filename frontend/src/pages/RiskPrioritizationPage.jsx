@@ -104,7 +104,7 @@ const RiskPrioritizationPage = () => {
 
   // Risk Score Comparison State (GET /v1/risk/comparison/{event_id})
   const [showComparisonPanel, setShowComparisonPanel] = useState(false);
-  const [comparisonEventId, setComparisonEventId] = useState('EVT-1001');
+  const [comparisonEventId, setComparisonEventId] = useState('');
   const [comparisonResult, setComparisonResult] = useState(null);
   const [comparisonLoading, setComparisonLoading] = useState(false);
   const [comparisonError, setComparisonError] = useState(null);
@@ -145,7 +145,11 @@ const RiskPrioritizationPage = () => {
       ]);
 
       setSummaryData(summaryRes);
-      setHighRiskData(highRiskRes?.data || []);
+      const highList = highRiskRes?.data || [];
+      setHighRiskData(highList);
+      if (highList.length > 0) {
+        setComparisonEventId((prev) => prev || highList[0]?.event_id || '');
+      }
     } catch (err) {
       console.error('Failed to load M3 Risk Overview data:', err);
       setError('Unable to load risk intelligence from the security operations backend.');
@@ -701,7 +705,7 @@ const RiskPrioritizationPage = () => {
                     type="text"
                     value={comparisonEventId}
                     onChange={(e) => setComparisonEventId(e.target.value)}
-                    placeholder="e.g. EVT-1001 or EVT01"
+                    placeholder="e.g. EVT00001"
                     className="soc-select"
                     style={{ width: '160px', fontSize: '0.8rem', padding: '0.25rem 0.5rem' }}
                   />

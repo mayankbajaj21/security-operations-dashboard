@@ -28,7 +28,8 @@ from backend.app.schemas.incident import (
     IncidentCreate,
     IncidentStatus,
     IncidentStatusUpdate,
-    AnalystFeedback
+    AnalystFeedback,
+    map_risk_level_to_priority
 )
 from backend.app.schemas.risk import RiskCalculateResponse
 from backend.app.schemas.correlation import AttackChain
@@ -192,7 +193,7 @@ class IncidentService:
             threat_type=threat_type,
             risk_score=risk_score,
             risk_level=risk_level,
-            priority=None,  # Preserved as None (formal priority formula pending)
+            priority=map_risk_level_to_priority(risk_level),
             affected_asset=affected_asset,
             affected_user=affected_user,
             source_ip=source_ip,
@@ -210,7 +211,214 @@ class IncidentService:
             updated_at=now_utc
         )
 
+        incident = self._enrich_incident_m4(incident)
         return self.save_incident(incident)
+
+    def _enrich_incident_m4(self, incident: Incident) -> Incident:
+        """
+        Milestone 4 — Module 4.3, Task 4: Authoritative Threat Investigation Enrichment.
+        
+        DATA INTEGRITY RULES:
+        1. Traceable correlation:
+           Incident -> established related_events -> security_events / threat_predictions / vulnerabilities -> authoritative data.
+        2. Zero hardcoded server names:
+           Critical asset must reuse authoritative M3 asset criticality or M3 reason explanation.
+        3. Authoritative CVE/CVSS:
+           Resolve CVE/CVSS strictly from established related events / M3 vulnerability data.
+           If unassociated, return None (displayed as 'N/A' in frontend).
+        4. Authoritative ML confidence:
+           Resolve from established related event and M2 prediction. If unassociated, return None.
+        5. 6 M3 Risk Factors:
+           Derive structurally from authoritative M3 calculation results and reasons.
+        """
+        related_events = incident.related_events or incident.event_ids or []
+        primary_evt = None
+        primary_pred = None
+        asset_crit = None
+
+        if self.db is not None and related_events:
+            try:
+                primary_evt = self.db["security_events"].find_one({"event_id": {"$in": related_events}})
+            except Exception as e:
+                logger.warning(f"Failed to query security_events for incident {incident.incident_id}: {e}")
+
+        if primary_evt:
+            # Resolve primary prediction from M2 threat_predictions
+            if self.db is not None:
+                try:
+                    primary_pred = self.db["threat_predictions"].find_one({"event_id": primary_evt["event_id"]})
+                except Exception as e:
+                    logger.warning(f"Failed to query threat_predictions for {primary_evt['event_id']}: {e}")
+
+            # Correlated CVE ID
+            if not incident.cve_id:
+                if primary_evt.get("cve_id"):
+                    incident.cve_id = str(primary_evt["cve_id"]).strip()
+                elif primary_evt.get("vulnerability_id") and str(primary_evt["vulnerability_id"]).strip().startswith("CVE-"):
+                    incident.cve_id = str(primary_evt["vulnerability_id"]).strip()
+
+            # Correlated CVSS Score
+            if incident.cvss_score is None:
+                if primary_evt.get("cvss_score") is not None:
+                    try:
+                        incident.cvss_score = float(primary_evt["cvss_score"])
+                    except (ValueError, TypeError):
+                        pass
+                elif primary_evt.get("raw_cvss_score") is not None:
+                    try:
+                        incident.cvss_score = float(primary_evt["raw_cvss_score"])
+                    except (ValueError, TypeError):
+                        pass
+
+                # If still None but we have a valid correlated cve_id, check M3 vulnerabilities collection
+                if incident.cvss_score is None and incident.cve_id and self.db is not None:
+                    try:
+                        vuln_doc = self.db["vulnerabilities"].find_one({"cve_id": incident.cve_id})
+                        if vuln_doc and vuln_doc.get("cvss_score") is not None:
+                            incident.cvss_score = float(vuln_doc["cvss_score"])
+                    except Exception:
+                        pass
+
+            # ML Confidence
+            if incident.ml_confidence is None and primary_pred and primary_pred.get("confidence_score") is not None:
+                try:
+                    incident.ml_confidence = int(primary_pred["confidence_score"])
+                    incident.confidence_score = incident.ml_confidence
+                except (ValueError, TypeError):
+                    pass
+
+            # Fill missing telemetry fields if absent on incident
+            if not incident.source_ip and primary_evt.get("source_ip"):
+                incident.source_ip = primary_evt["source_ip"]
+            if not incident.affected_user and primary_evt.get("username"):
+                incident.affected_user = primary_evt["username"]
+                incident.username = primary_evt["username"]
+            if not incident.affected_asset and primary_evt.get("asset_name"):
+                incident.affected_asset = primary_evt["asset_name"]
+                incident.asset_id = primary_evt["asset_name"]
+            if not incident.mitre_techniques and primary_evt.get("mitre_id"):
+                incident.mitre_techniques = [str(primary_evt["mitre_id"])]
+                incident.mitre_technique = [str(primary_evt["mitre_id"])]
+
+            asset_crit = primary_evt.get("asset_criticality")
+
+        # Resolve asset criticality and department from authoritative M3 assets collection
+        asset_key = str(incident.affected_asset or "").strip()
+        ast_doc = None
+        if asset_key and self.db is not None:
+            if not hasattr(self, "_asset_cache"):
+                self._asset_cache = {}
+            if asset_key in self._asset_cache:
+                ast_doc = self._asset_cache[asset_key]
+            else:
+                try:
+                    ast_doc = self.db["assets"].find_one({
+                        "$or": [
+                            {"asset_name": asset_key},
+                            {"asset_id": asset_key}
+                        ]
+                    })
+                    self._asset_cache[asset_key] = ast_doc
+                except Exception:
+                    pass
+
+        if ast_doc:
+            if not asset_crit and ast_doc.get("criticality"):
+                asset_crit = ast_doc["criticality"]
+            if not incident.department and ast_doc.get("department"):
+                incident.department = str(ast_doc["department"]).strip()
+
+        # If still unassigned, resolve from authoritative security event telemetry
+        if not incident.department and primary_evt:
+            evt_dept = primary_evt.get("department") or primary_evt.get("asset_department")
+            if evt_dept and str(evt_dept).strip() and str(evt_dept).strip().lower() not in ("none", "n/a", "unknown"):
+                incident.department = str(evt_dept).strip()
+
+        # If asset has no authoritative department, it remains None / N/A. DO NOT default to 'IT'.
+
+        # Evaluate the 6 M3 Risk Factors strictly reusing authoritative M3 logic
+        reasons_lower = [str(r).lower() for r in (incident.reasons or [])]
+        threat_type_str = str(incident.threat_type or "").lower()
+        ioc_status_str = str(incident.ioc_status or "").lower()
+
+        # 1. Critical asset: authoritative M3 criticality or M3 explanation (NO hardcoded server names)
+        crit_asset = (
+            any("critical business impact" in r for r in reasons_lower) or
+            (asset_crit is not None and str(asset_crit).strip().lower() == "critical")
+        )
+
+        # 2. High ML confidence: M3 threshold >= 80 or M3 explanation
+        conf_val = incident.ml_confidence if incident.ml_confidence is not None else incident.confidence_score
+        high_conf = (
+            any("high ml threat confidence" in r for r in reasons_lower) or
+            (conf_val is not None and conf_val >= 80)
+        )
+
+        # 3. Malicious IOC: M3 threat intel factor or status
+        mal_ioc = (
+            any("indicator of compromise" in r for r in reasons_lower) or
+            ioc_status_str in ("malicious", "hit", "true")
+        )
+
+        # 4. High CVSS: M3 threshold >= 7.0 (norm_vulnerability >= 70.0) or M3 explanation
+        cvss_val = incident.cvss_score
+        high_cvss = (
+            any("high active vulnerability exposure" in r for r in reasons_lower) or
+            (cvss_val is not None and float(cvss_val) >= 7.0)
+        )
+
+        # 5. Multiple related events: len(related_events) > 1
+        multi_events = len(related_events) > 1
+
+        # 6. Ransomware behavior detected: threat_type or explanation
+        ransomware_detected = (
+            "ransomware" in threat_type_str or
+            any("ransomware" in r for r in reasons_lower)
+        )
+
+        incident.risk_factors = {
+            "critical_asset": bool(crit_asset),
+            "high_ml_confidence": bool(high_conf),
+            "malicious_ioc": bool(mal_ioc),
+            "high_cvss": bool(high_cvss),
+            "multiple_related_events": bool(multi_events),
+            "ransomware_behavior_detected": bool(ransomware_detected)
+        }
+
+        if not incident.severity:
+            incident.severity = incident.risk_level or "Low"
+
+        # Generate XAI reasons if missing
+        if not incident.reasons:
+            try:
+                from backend.app.services.risk_engine import (
+                    normalize_threat_severity, normalize_ml_confidence,
+                    normalize_asset_criticality, normalize_vulnerability_risk,
+                    normalize_threat_intel, RiskScoringEngine
+                )
+                norm_sev = normalize_threat_severity(incident.risk_level)
+                norm_conf = normalize_ml_confidence(conf_val or 0.0)
+                norm_crit = normalize_asset_criticality(asset_crit or "Low")
+                norm_vuln = normalize_vulnerability_risk(incident.cvss_score or 0.0)
+                norm_intel = normalize_threat_intel(incident.ioc_status or False)
+                incident.reasons = RiskScoringEngine._generate_reasons(
+                    norm_severity=norm_sev,
+                    norm_confidence=norm_conf,
+                    norm_criticality=norm_crit,
+                    norm_vulnerability=norm_vuln,
+                    norm_threat_intel=norm_intel,
+                    severity_raw=incident.risk_level,
+                    confidence_raw=conf_val,
+                    criticality_raw=asset_crit,
+                    cvss_raw=incident.cvss_score,
+                    asset_name=incident.affected_asset,
+                    anomaly_score=None,
+                    existing_reasons=[]
+                )
+            except Exception:
+                pass
+
+        return incident
 
     def save_incident(self, incident: Incident) -> Incident:
         """
@@ -246,13 +454,13 @@ class IncidentService:
             try:
                 doc = self.collection.find_one({"incident_id": clean_id}, {"_id": 0})
                 if doc:
-                    return Incident(**doc)
+                    return self._enrich_incident_m4(Incident(**doc))
             except PyMongoError as e:
                 logger.error(f"Failed to query MongoDB for incident {clean_id}: {e}")
 
         raw_mem = self._in_memory_store.get(clean_id)
         if raw_mem:
-            return Incident(**raw_mem)
+            return self._enrich_incident_m4(Incident(**raw_mem))
 
         return None
 
@@ -340,7 +548,7 @@ class IncidentService:
             try:
                 cursor = self.collection.find(filter_query, {"_id": 0}).skip(offset).limit(limit)
                 for doc in cursor:
-                    incidents.append(Incident(**doc))
+                    incidents.append(self._enrich_incident_m4(Incident(**doc)))
                 return incidents
             except PyMongoError as e:
                 logger.error(f"Failed to list incidents from MongoDB: {e}")
@@ -348,6 +556,6 @@ class IncidentService:
         # In-memory fallback
         for doc in self._in_memory_store.values():
             if not status or doc.get("status") == str(status).strip():
-                incidents.append(Incident(**doc))
+                incidents.append(self._enrich_incident_m4(Incident(**doc)))
 
         return incidents[offset:offset + limit]

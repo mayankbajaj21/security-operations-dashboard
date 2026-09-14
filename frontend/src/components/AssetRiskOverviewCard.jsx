@@ -1,21 +1,26 @@
 import React, { useMemo } from 'react';
 import { Server, ArrowRight } from 'lucide-react';
-import { aggregateAssetRisk } from '../utils/assetRiskAggregator';
 
 /**
  * AssetRiskOverviewCard — Compact Overview Widget for Asset Risk & Exposure
  * 
- * Displays a concise row of 5 compact asset KPI cards (Database-01, Finance-PC-02, Firewall, WebServer, HR-PC-01)
+ * Displays compact asset KPI cards from authoritative backend IT asset inventory (GET /assets)
  * with direct navigation to Analytics -> Asset Risk.
- * Authoritative Source: Security Events Dataset (GET /events)
+ * Consumes authoritative MongoDB aggregation metrics without client-side heuristics.
  */
-const AssetRiskOverviewCard = ({ allEvents = null, onNavigateToAssetRisk }) => {
-  // Aggregate asset telemetry dynamically from security events
+const AssetRiskOverviewCard = ({ assetsData = null, onNavigateToAssetRisk }) => {
+  // Map authoritative backend asset telemetry directly from GET /assets
   const assets = useMemo(() => {
-    return aggregateAssetRisk(allEvents);
-  }, [allEvents]);
+    if (!assetsData || !Array.isArray(assetsData)) return [];
+    return assetsData.slice(0, 5).map((a) => ({
+      asset_name: a.asset_name,
+      totalEvents: a.event_count ?? 0,
+      criticalEvents: a.critical_event_count ?? 0,
+      criticality: a.criticality || '—'
+    }));
+  }, [assetsData]);
 
-  const isLoading = allEvents === null;
+  const isLoading = assetsData === null;
 
   return (
     <div className="panel" style={styles.panel}>
